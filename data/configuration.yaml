@@ -1,20 +1,187 @@
-# Home Assistant integration (MQTT discovery)
-homeassistant: false
-
-# allow new devices to join
-permit_join: true
-
-# MQTT settings
+homeassistant: true
+permit_join: false
+frontend:
+  port: 80
+experimental:
+  new_api: true
 mqtt:
-  # MQTT base topic for zigbee2mqtt MQTT messages
   base_topic: zigbee2mqtt
-  # MQTT server URL
   server: 'mqtt://localhost'
-  # MQTT server authentication, uncomment if required:
-  # user: my_user
-  # password: my_password
-
-# Serial settings
+  user: zigbee
+  password: bumble
 serial:
-  # Location of CC2531 USB sniffer
   port: /dev/ttyACM0
+advanced:
+  pan_id: 43241
+  ext_pan_id:
+    - 212
+    - 11
+    - 81
+    - 94
+    - 110
+    - 170
+    - 109
+    - 5
+  channel: 20
+  network_key:
+    - 13
+    - 5
+    - 1
+    - 9
+    - 3
+    - 11
+    - 3
+    - 5
+    - 10
+    - 12
+    - 6
+    - 6
+    - 11
+    - 10
+    - 15
+    - 1
+  availability_timeout: 900
+  availability_blacklist: []
+  report: true
+  homeassistant_legacy_triggers: false
+groups:
+  '1':
+    friendly_name: kitchen_lights
+    devices:
+      - 0x000d6f000341b895/1
+      - 0x000d6f00035fea37/1
+      - 0x000d6f00035fd1fb/1
+      - 0x000d6f00035fe328/1
+      - 0x000d6f00035fe7f2/1
+      - 0x000d6f000341a7ff/1
+  '2':
+    friendly_name: living_lights
+    devices:
+      - 0x000d6f000341a8b9/1
+      - 0x000d6f000341bc95/1
+      - 0x000d6f000341c448/1
+      - 0x000d6f00035fcdae/1
+      - 0x000d6f00035fd50f/1
+      - 0x000d6f00035fd9ed/1
+      - 0x000d6f00035fefd4/1
+      - 0x000d6f00035fecec/1
+devices:
+  '0x000d6f00032927da':
+    friendly_name: lab_bench_switch
+  '0x000b52000000497f':
+    friendly_name: shop_bench_240
+  '0x000d6f00057cccdd':
+    friendly_name: shop_compressor_button
+  '0x01124b001bafe67d':
+    friendly_name: shop_compressor_relay
+  '0x00124b0009d4946d':
+    friendly_name: shop_oh_door_relay
+  '0x000d6f00057bcc36':
+    friendly_name: shop_man_door
+  '0x000d6f0000e9544c':
+    friendly_name: shop_deadbolt
+  '0x00158d00032bab1b':
+    friendly_name: shop_smoke
+  '0x000d6f0002fb7709':
+    friendly_name: garage_deadbolt
+  '0x000d6f00024c56a3':
+    friendly_name: deck_deadbolt
+  '0x000d6f0002fb96ab':
+    friendly_name: front_deadbolt
+  '0x00124b0007230849':
+    friendly_name: nightstand
+  '0x000d6f000a90c954':
+    friendly_name: garage_chargers
+  '0x000d6f000405f24d':
+    friendly_name: crawl_dehum
+  '0x000d6f000326265a':
+    friendly_name: washer
+  '0x24fd5b0001088207':
+    friendly_name: washer_leak
+  '0x000d6f0003049af6':
+    friendly_name: lab_thermostat
+  '0x01124b001bb00e07':
+    friendly_name: hvac_uv
+  '0x000d6f0003c1b421':
+    friendly_name: garage_dehum
+  '0x0007a6ffff01a4cc':
+    friendly_name: house_thermostat
+  '0x00124b000883b32d':
+    friendly_name: garage_homelink
+  '0x000d6f0003fed57b':
+    friendly_name: crawl_humidity
+  '0x000d6f00044cee86':
+    friendly_name: garage_humidity
+  '0x00124b0005538451':
+    friendly_name: garage_oh_doors
+  '0x000d6f000304b058':
+    friendly_name: printer
+  '0x000d6f000bba7d1c':
+    friendly_name: shop_unlock_button
+  '0x000d6f0003262f1d':
+    friendly_name: shop_bench_120
+  '0x000d6f000bba6d01':
+    friendly_name: lab_bench_button
+  '0x000d6f0002f73943':
+    friendly_name: lab_bench_light
+  '0x00124b000144f8a7':
+    friendly_name: shop_hvac
+  '0x00124b0007bd44a0':
+    friendly_name: master_filter
+  '0x00124b000552f690':
+    friendly_name: '0x00124b000552f690'
+  '0x0000000000407f28':
+    friendly_name: '0x0000000000407f28'
+  '0x000000000048096a':
+    friendly_name: '0x000000000048096a'
+  '0x000000000045b88d':
+    friendly_name: '0x000000000045b88d'
+  '0x000d6f00057bd6da':
+    friendly_name: shop_oh_door
+  '0x000d6f0002f80acc':
+    friendly_name: master_repeater
+  '0x000d6f000bf54f21':
+    friendly_name: mailbox
+  '0x907af10051d7020d':
+    friendly_name: fridge_wally
+  '0x000d6f000b10f4f3':
+    friendly_name: lab_mouse
+  '0x907af10051d60c6c':
+    friendly_name: closet_wally
+  '0x000d6f0003ff6109':
+    friendly_name: '0x000d6f0003ff6109'
+  '0xbc33acfffe500a52':
+    friendly_name: shop_temp_hum
+  '0x000d6f000341c448':
+    friendly_name: '0x000d6f000341c448'
+  '0x000d6f00035fea37':
+    friendly_name: '0x000d6f00035fea37'
+  '0x000d6f00035fd1fb':
+    friendly_name: '0x000d6f00035fd1fb'
+  '0x000d6f000341b895':
+    friendly_name: '0x000d6f000341b895'
+  '0x000d6f000341a7ff':
+    friendly_name: '0x000d6f000341a7ff'
+  '0x000d6f00035fe328':
+    friendly_name: '0x000d6f00035fe328'
+  '0x000d6f00035fe7f2':
+    friendly_name: '0x000d6f00035fe7f2'
+  '0x000d6f0005980546':
+    friendly_name: fob
+    presence_timeout: 100
+  '0x000d6f00035fcdae':
+    friendly_name: '0x000d6f00035fcdae'
+  '0x000d6f00035fefd4':
+    friendly_name: '0x000d6f00035fefd4'
+  '0x000d6f00035fd50f':
+    friendly_name: '0x000d6f00035fd50f'
+  '0x000d6f00035fd9ed':
+    friendly_name: '0x000d6f00035fd9ed'
+  '0x000d6f000341a8b9':
+    friendly_name: '0x000d6f000341a8b9'
+  '0x000d6f00035fecec':
+    friendly_name: '0x000d6f00035fecec'
+  '0x000d6f000341bc95':
+    friendly_name: '0x000d6f000341bc95'
+  '0x24fd5b0001088238':
+    friendly_name: kitchen_leak
