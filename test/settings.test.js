@@ -1,8 +1,8 @@
 require('./stub/logger');
 require('./stub/data');
-const data = require('../lib/util/data.js');
-const utils = require('../lib/util/utils.js');
-const settings = require('../lib/util/settings.js');
+const data = require('../lib/util/data');
+const utils = require('../lib/util/utils').default;
+const settings = require('../lib/util/settings.ts');
 const fs = require('fs');
 const configurationFile = data.joinPath('configuration.yaml');
 const devicesFile = data.joinPath('devices.yaml');
@@ -20,12 +20,12 @@ const minimalConfig = {
 
 describe('Settings', () => {
     const write = (file, json, reread=true) => {
-        fs.writeFileSync(file, yaml.safeDump(json))
+        fs.writeFileSync(file, yaml.dump(json))
         if (reread) {
-            settings._reRead();
+            settings.reRead();
         }
     };
-    const read = (file) => yaml.safeLoad(fs.readFileSync(file, 'utf8'));
+    const read = (file) => yaml.load(fs.readFileSync(file, 'utf8'));
     const remove = (file) => {
         if (fs.existsSync(file)) fs.unlinkSync(file);
     }
@@ -47,7 +47,7 @@ describe('Settings', () => {
     it('Should return default settings', () => {
         write(configurationFile, {});
         const s = settings.get();
-        const expected = settings._getDefaults();
+        const expected = objectAssignDeep.noMutate({}, settings.testing.defaults);
         expected.devices = {};
         expected.groups = {};
         expect(s).toStrictEqual(expected);
@@ -56,7 +56,7 @@ describe('Settings', () => {
     it('Should return settings', () => {
         write(configurationFile, {permit_join: true});
         const s = settings.get();
-        const expected = settings._getDefaults();
+        const expected = objectAssignDeep.noMutate({}, settings.testing.defaults);
         expected.devices = {};
         expected.groups = {};
         expected.permit_join = true;
@@ -67,19 +67,17 @@ describe('Settings', () => {
         process.env['ZIGBEE2MQTT_CONFIG_SERIAL_DISABLE_LED'] = 'true';
         process.env['ZIGBEE2MQTT_CONFIG_ADVANCED_SOFT_RESET_TIMEOUT'] = 1;
         process.env['ZIGBEE2MQTT_CONFIG_EXPERIMENTAL_OUTPUT'] = 'csvtest';
-        process.env['ZIGBEE2MQTT_CONFIG_ADVANCED_AVAILABILITY_BLOCKLIST'] = '["0x43597f0dac781b1e", "x223b0aef2ae8d1b0"]';
         process.env['ZIGBEE2MQTT_CONFIG_MAP_OPTIONS_GRAPHVIZ_COLORS_FILL'] = '{"enddevice": "#ff0000", "coordinator": "#00ff00", "router": "#0000ff"}';
         process.env['ZIGBEE2MQTT_CONFIG_MQTT_BASE_TOPIC'] = 'testtopic';
 
         write(configurationFile, {});
         const s = settings.get();
-        const expected = objectAssignDeep.noMutate({}, settings._getDefaults());
+        const expected = objectAssignDeep.noMutate({}, settings.testing.defaults);
         expected.devices = {};
         expected.groups = {};
         expected.serial.disable_led = true;
         expected.advanced.soft_reset_timeout = 1;
         expected.experimental.output = 'csvtest';
-        expected.advanced.availability_blocklist = ['0x43597f0dac781b1e', 'x223b0aef2ae8d1b0'];
         expected.map_options.graphviz.colors.fill = {enddevice: '#ff0000', coordinator: '#00ff00', router: '#0000ff'};
         expected.mqtt.base_topic = 'testtopic';
 
@@ -117,7 +115,6 @@ describe('Settings', () => {
         const device = settings.getDevice('0x12345678');
         const expected = {
             ID: "0x12345678",
-            friendlyName: "0x12345678",
             friendly_name: '0x12345678',
             retain: false,
         };
@@ -163,7 +160,7 @@ describe('Settings', () => {
         expect(settings.get().mqtt).toStrictEqual(expected);
         expect(settings.get().advanced.network_key).toStrictEqual([1,2,3]);
 
-        settings._write();
+        settings.testing.write();
         expect(read(configurationFile)).toStrictEqual(contentConfiguration);
         expect(read(secretFile)).toStrictEqual(contentSecret);
 
@@ -190,7 +187,6 @@ describe('Settings', () => {
         const device = settings.getDevice('0x12345678');
         const expected = {
             ID: "0x12345678",
-            friendlyName: "0x12345678",
             friendly_name: '0x12345678',
             retain: false,
         };
@@ -349,10 +345,8 @@ describe('Settings', () => {
         const group = settings.getGroup('1');
         const expected = {
             ID: 1,
-            friendlyName: '123',
             friendly_name: '123',
             devices: [],
-            optimistic: true,
         };
 
         expect(group).toStrictEqual(expected);
@@ -375,10 +369,8 @@ describe('Settings', () => {
         const group = settings.getGroup('1');
         const expected = {
             ID: 1,
-            friendlyName: '123',
             friendly_name: '123',
             devices: [],
-            optimistic: true,
         };
 
         expect(group).toStrictEqual(expected);
@@ -420,9 +412,7 @@ describe('Settings', () => {
 
         const group = settings.getGroup('1');
         const expectedGroup = {
-            optimistic: true,
             ID: 1,
-            friendlyName: '123',
             friendly_name: '123',
             devices: [],
         };
@@ -433,7 +423,6 @@ describe('Settings', () => {
 
         const expectedDevice2 = {
             ID: '0x1234',
-            friendlyName: '0x1234',
             friendly_name: '0x1234',
         };
 
@@ -496,7 +485,7 @@ describe('Settings', () => {
         settings.addGroup('test123', 123);
         expect(() => {
             settings.addGroup('test_id_123', 123);
-        }).toThrow(new Error("group id '123' is already in use"));
+        }).toThrow(new Error("Group ID '123' is already in use"));
         const expected = {
             '123': {
                 friendly_name: 'test123',
@@ -616,7 +605,7 @@ describe('Settings', () => {
             advanced: {network_key: 'NOT_GENERATE'},
         });
 
-        settings._reRead();
+        settings.reRead();
 
         const error = `advanced.network_key: should be array or 'GENERATE' (is 'NOT_GENERATE')`;
         expect(settings.validate()).toEqual(expect.arrayContaining([error]));
@@ -628,7 +617,7 @@ describe('Settings', () => {
             advanced: {pan_id: 'NOT_GENERATE'},
         });
 
-        settings._reRead();
+        settings.reRead();
 
         const error = `advanced.pan_id: should be number or 'GENERATE' (is 'NOT_GENERATE')`;
         expect(settings.validate()).toEqual(expect.arrayContaining([error]));
@@ -641,7 +630,7 @@ describe('Settings', () => {
             devices: {'0x0017880104e45519': {friendly_name: 'tain', retention: 900}},
         });
 
-        settings._reRead();
+        settings.reRead();
         expect(settings.validate()).toEqual([]);
     });
 
@@ -652,7 +641,7 @@ describe('Settings', () => {
             devices: {'0x0017880104e45519': {friendly_name: 'tain', retention: 900}},
         });
 
-        settings._reRead();
+        settings.reRead();
 
         const error = 'MQTT retention requires protocol version 5';
         expect(settings.validate()).toEqual(expect.arrayContaining([error]));
@@ -665,7 +654,7 @@ describe('Settings', () => {
             advanced: {availability_blocklist: ['0x0017880104e45519', 'non_existing']},
         });
 
-        settings._reRead();
+        settings.reRead();
 
         const error = `Non-existing entity 'non_existing' specified in 'availability_blocklist'`;
         expect(settings.validate()).toEqual(expect.arrayContaining([error]));
@@ -677,9 +666,9 @@ describe('Settings', () => {
             advanced: null,
         });
 
-        settings._reRead();
+        settings.reRead();
 
-        const error = `advanced should be object`;
+        const error = `advanced must be object`;
         expect(settings.validate()).toEqual(expect.arrayContaining([error]));
     });
 
@@ -705,13 +694,13 @@ describe('Settings', () => {
              \t wrong
         `)
 
-        settings._clear();
+        settings.testing.clear();
         const error = `Your YAML file: '${configurationFile}' is invalid (use https://jsonformatter.org/yaml-validator to find and fix the issue)`;
         expect(settings.validate()).toEqual(expect.arrayContaining([error]));
     });
 
     it('Should throw error when yaml file does not exist', () => {
-        settings._clear();
+        settings.testing.clear();
         const error = `ENOENT: no such file or directory, open '${configurationFile}'`;
         expect(settings.validate()).toEqual(expect.arrayContaining([error]));
     });
@@ -723,7 +712,7 @@ describe('Settings', () => {
             groups: {'1': {friendly_name: 'myname', retain: false}},
         });
 
-        settings._reRead();
+        settings.reRead();
 
         const error = `Duplicate friendly_name 'myname' found`;
         expect(settings.validate()).toEqual(expect.arrayContaining([error]));
@@ -735,9 +724,9 @@ describe('Settings', () => {
             devices: {'0x0017880104e45519': {friendly_name: '', retain: false}},
         });
 
-        settings._reRead();
+        settings.reRead();
 
-        const error = `friendly_name shoud atleast be 1 char long`;
+        const error = `friendly_name must be at least 1 char long`;
         expect(settings.validate()).toEqual(expect.arrayContaining([error]));
     });
 
@@ -747,7 +736,7 @@ describe('Settings', () => {
             devices: {'0x0017880104e45519': {friendly_name: 'blaa/', retain: false}},
         });
 
-        settings._reRead();
+        settings.reRead();
 
         const error = `friendly_name is not allowed to end or start with /`;
         expect(settings.validate()).toEqual(expect.arrayContaining([error]));
@@ -759,7 +748,7 @@ describe('Settings', () => {
             devices: {'0x0017880104e45519': {friendly_name: 'blaa/blaa' + String.fromCharCode(0), retain: false}},
         });
 
-        settings._reRead();
+        settings.reRead();
 
         const error = `friendly_name is not allowed to contain null char`;
         expect(settings.validate()).toEqual(expect.arrayContaining([error]));
@@ -771,7 +760,7 @@ describe('Settings', () => {
             devices: {'0x0017880104e45519': {friendly_name: 'myname/123', retain: false}},
         });
 
-        settings._reRead();
+        settings.reRead();
 
         const error = `Friendly name cannot end with a "/DIGIT" ('myname/123')`;
         expect(settings.validate()).toEqual(expect.arrayContaining([error]));
@@ -783,7 +772,7 @@ describe('Settings', () => {
             devices: {'0x0017880104e45519': {friendly_name: 'myname#', retain: false}},
         });
 
-        settings._reRead();
+        settings.reRead();
 
         const error = `MQTT wildcard (+ and #) not allowed in friendly_name ('myname#')`;
         expect(settings.validate()).toEqual(expect.arrayContaining([error]));
@@ -795,9 +784,9 @@ describe('Settings', () => {
             devices: {'0x0017880104e45519': {friendly_name: 'left', retain: false}},
         });
 
-        settings._reRead();
+        settings.reRead();
 
-        const error = `Following friendly_name are not allowed: '${utils.getEndpointNames()}'`;
+        const error = `Following friendly_name are not allowed: '${utils.endpointNames}'`;
         expect(settings.validate()).toEqual(expect.arrayContaining([error]));
     });
 
@@ -809,7 +798,7 @@ describe('Settings', () => {
             },
         });
 
-        settings._reRead();
+        settings.reRead();
 
         expect(() => {
             settings.changeFriendlyName('myname1', 'myname');
@@ -824,7 +813,7 @@ describe('Settings', () => {
             },
         });
 
-        settings._reRead();
+        settings.reRead();
 
         expect(() => {
             settings.removeDevice('myname33');

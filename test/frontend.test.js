@@ -5,7 +5,7 @@ const MQTT = require('./stub/mqtt');
 const settings = require('../lib/util/settings');
 const Controller = require('../lib/controller');
 const stringify = require('json-stable-stringify-without-jsonify');
-const flushPromises = () => new Promise(setImmediate);
+const flushPromises = require('./lib/flushPromises');
 const zigbeeHerdsman = require('./stub/zigbeeHerdsman');
 jest.spyOn(process, 'exit').mockImplementation(() => {});
 
@@ -31,6 +31,7 @@ const mockWS = {
             cb(mockWSocket)
         }),
         emit: jest.fn(),
+        close: jest.fn(),
     },
     variables: {},
     events: {},
@@ -70,14 +71,22 @@ jest.mock('ws', () => ({
 describe('Frontend', () => {
     let controller;
 
+    beforeAll(async () => {
+        jest.useFakeTimers();
+    });
+
     beforeEach(async () => {
         mockWS.implementation.clients = [];
         data.writeDefaultConfiguration();
         data.writeDefaultState();
-        settings._reRead();
+        settings.reRead();
         settings.set(['frontend'], {port: 8081, host: "127.0.0.1"});
         settings.set(['homeassistant'], true);
         zigbeeHerdsman.devices.bulb.linkquality = 10;
+    });
+
+    afterAll(async () => {
+        jest.useRealTimers();
     });
 
     afterEach(async() => {
@@ -85,25 +94,27 @@ describe('Frontend', () => {
     });
 
     it('Start/stop', async () => {
-        controller = new Controller();
+        controller = new Controller(jest.fn(), jest.fn());
         await controller.start();
         expect(mockNodeStatic.variables.path).toBe("my/dummy/path");
         expect(mockHTTP.implementation.listen).toHaveBeenCalledWith(8081, "127.0.0.1");
 
         const mockWSClient = {
             implementation: {
-                close: jest.fn(),
+                terminate: jest.fn(),
+                send: jest.fn(),
             },
             events: {},
         };
         mockWS.implementation.clients.push(mockWSClient.implementation);
         await controller.stop();
-        expect(mockWSClient.implementation.close).toHaveBeenCalledTimes(1);
+        expect(mockWSClient.implementation.terminate).toHaveBeenCalledTimes(1);
         expect(mockHTTP.implementation.close).toHaveBeenCalledTimes(1);
+        expect(mockWS.implementation.close).toHaveBeenCalledTimes(1);
     });
 
     it('Websocket interaction', async () => {
-        controller = new Controller();
+        controller = new Controller(jest.fn(), jest.fn());
         await controller.start();
 
         // Connect
@@ -118,34 +129,34 @@ describe('Frontend', () => {
         mockWS.implementation.clients.push(mockWSClient.implementation);
         await mockWS.events.connection(mockWSClient.implementation);
 
-        expect(JSON.parse(mockWSClient.implementation.send.mock.calls[0])).toStrictEqual({topic: 'bridge/state', payload: 'online'});
-        expect(JSON.parse(mockWSClient.implementation.send.mock.calls[12])).toStrictEqual({topic:"remote", payload:{brightness:255, update:{state: "idle"}, update_available: false}});
+        expect(mockWSClient.implementation.send).toHaveBeenCalledWith(stringify({topic: 'bridge/state', payload: 'online'}));
+        expect(mockWSClient.implementation.send).toHaveBeenCalledWith(stringify({topic:"remote", payload:{brightness:255}}));
 
         // Message
         MQTT.publish.mockClear();
         mockWSClient.implementation.send.mockClear();
-        mockWSClient.events.message(stringify({topic: 'bulb_color/set', payload: {state: 'ON'}}))
+        mockWSClient.events.message(stringify({topic: 'bulb_color/set', payload: {state: 'ON'}}), false)
         await flushPromises();
-        expect(MQTT.publish).toHaveBeenCalledTimes(4);
+        expect(MQTT.publish).toHaveBeenCalledTimes(1);
         expect(MQTT.publish).toHaveBeenCalledWith(
             'zigbee2mqtt/bulb_color',
-            stringify({state: 'ON'}),
+            stringify({state: 'ON', linkquality: null, update_available: null}),
             { retain: false, qos: 0 },
             expect.any(Function)
         );
-        mockWSClient.events.message(undefined);
-        mockWSClient.events.message("");
-        mockWSClient.events.message(null);
+        mockWSClient.events.message(undefined, false);
+        mockWSClient.events.message("", false);
+        mockWSClient.events.message(null, false);
         await flushPromises();
 
         // Received message on socket
-        expect(mockWSClient.implementation.send).toHaveBeenCalledTimes(4);
-        expect(mockWSClient.implementation.send).toHaveBeenCalledWith(stringify({topic: 'bulb_color', payload: {state: 'ON'}}));
+        expect(mockWSClient.implementation.send).toHaveBeenCalledTimes(1);
+        expect(mockWSClient.implementation.send).toHaveBeenCalledWith(stringify({topic: 'bulb_color', payload: {state: 'ON', linkquality: null, update_available: null}}));
 
         // Shouldnt set when not ready
         mockWSClient.implementation.send.mockClear();
         mockWSClient.implementation.readyState = 'close';
-        mockWSClient.events.message(stringify({topic: 'bulb_color/set', payload: {state: 'ON'}}))
+        mockWSClient.events.message(stringify({topic: 'bulb_color/set', payload: {state: 'ON'}}), false)
         expect(mockWSClient.implementation.send).toHaveBeenCalledTimes(0);
 
         // Send last seen on connect
@@ -154,11 +165,11 @@ describe('Frontend', () => {
         settings.set(['advanced'], {last_seen: 'ISO_8601'});
         mockWS.implementation.clients.push(mockWSClient.implementation);
         await mockWS.events.connection(mockWSClient.implementation);
-        expect(JSON.parse(mockWSClient.implementation.send.mock.calls[12])).toStrictEqual({topic:"remote", payload:{brightness:255, last_seen: "1970-01-01T00:00:01.000Z", update:{state: "idle"}, update_available: false}});
+        expect(mockWSClient.implementation.send).toHaveBeenCalledWith(stringify({topic:"remote", payload:{brightness:255, last_seen: "1970-01-01T00:00:01.000Z"}}));
     });
 
     it('onReques/onUpgrade', async () => {
-        controller = new Controller();
+        controller = new Controller(jest.fn(), jest.fn());
         await controller.start();
 
         const mockSocket = {destroy: jest.fn()};
@@ -176,7 +187,7 @@ describe('Frontend', () => {
     });
 
     it('Static server', async () => {
-        controller = new Controller();
+        controller = new Controller(jest.fn(), jest.fn());
         await controller.start();
 
         expect(mockHTTP.implementation.listen).toHaveBeenCalledWith(8081, "127.0.0.1");
@@ -185,7 +196,7 @@ describe('Frontend', () => {
     it('Authentification', async () => {
         const authToken = 'sample-secure-token'
         settings.set(['frontend'], {auth_token: authToken});
-        controller = new Controller();
+        controller = new Controller(jest.fn(), jest.fn());
         await controller.start();
 
         const mockSocket = {destroy: jest.fn()};
