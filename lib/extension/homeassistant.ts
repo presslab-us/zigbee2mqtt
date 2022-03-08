@@ -268,16 +268,16 @@ export default class HomeAssistant extends Extension {
 
             discoveryEntries.push(discoveryEntry);
         } else if (firstExpose.type === 'lock') {
-            assert(!endpoint, `Endpoint not supported for lock type`);
             const state = firstExpose.features.find((f) => f.name === 'state');
-            assert(state, 'No state found');
             const discoveryEntry: DiscoveryEntry = {
                 type: 'lock',
                 object_id: 'lock',
+                object_id: firstExpose.endpoint ? `lock_${firstExpose.endpoint}` : 'lock',
                 mockProperties: [state.property],
                 discovery_payload: {
                     command_topic: true,
-                    value_template: `{{ value_json.${state.property} }}`,
+                    value_template: `{{ value_json.state${firstExpose.endpoint ? `_${firstExpose.endpoint}` : ''} }}`,
+                    command_topic_prefix: firstExpose.endpoint ? firstExpose.endpoint : undefined,
                 },
             };
 

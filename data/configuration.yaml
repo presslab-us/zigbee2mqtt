@@ -2,11 +2,11 @@ homeassistant: true
 permit_join: false
 frontend:
   port: 80
-experimental:
-  new_api: true
+external_converters:
+  - presslab.js
 mqtt:
   base_topic: zigbee2mqtt
-  server: 'mqtt://localhost'
+  server: mqtt://localhost
   user: zigbee
   password: bumble
 serial:
@@ -74,8 +74,6 @@ devices:
     friendly_name: shop_compressor_button
   '0x01124b001bafe67d':
     friendly_name: shop_compressor_relay
-  '0x00124b0009d4946d':
-    friendly_name: shop_oh_door_relay
   '0x000d6f00057bcc36':
     friendly_name: shop_man_door
   '0x000d6f0000e9544c':
@@ -98,8 +96,6 @@ devices:
     friendly_name: washer
   '0x24fd5b0001088207':
     friendly_name: washer_leak
-  '0x000d6f0003049af6':
-    friendly_name: lab_thermostat
   '0x01124b001bb00e07':
     friendly_name: hvac_uv
   '0x000d6f0003c1b421':
@@ -185,3 +181,23 @@ devices:
     friendly_name: '0x000d6f000341bc95'
   '0x24fd5b0001088238':
     friendly_name: kitchen_leak
+  '0x7ce524000006c52e':
+    friendly_name: '0x7ce524000006c52e'
+  '0x000d6f000b10db64':
+    friendly_name: '0x000d6f000b10db64'
+  '0x0022a3000033a888':
+    friendly_name: '0x0022a3000033a888'
+  '0x0022a3000034cded':
+    friendly_name: '0x0022a3000034cded'
+  '0x00158d000708b49d':
+    friendly_name: '0x00158d000708b49d'
+  '0x00124b0022d5c852':
+    friendly_name: '0x00124b0022d5c852'
+  '0x000d6f000e875a0e':
+    friendly_name: '0x000d6f000e875a0e'
+  '0x000d6f0010c9a75e':
+    friendly_name: '0x000d6f0010c9a75e'
+  '0x500b914000016669':
+    friendly_name: '0x500b914000016669'
+    thermostat_unit: celsius
+    legacy: false
