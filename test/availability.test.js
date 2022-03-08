@@ -205,12 +205,37 @@ describe('Availability', () => {
         expect(devices.bulb_color.ping).toHaveBeenCalledTimes(0);
     });
 
+    it('Should stop pinging device when it is removed', async () => {
+        await resetExtension();
+        MQTT.publish.mockClear();
+
+        await advancedTime(utils.minutes(9));
+        expect(devices.bulb_color.ping).toHaveBeenCalledTimes(0);
+
+        MQTT.events.message('zigbee2mqtt/bridge/request/device/remove', stringify({id: "bulb_color"}));
+        await flushPromises();
+
+        await advancedTime(utils.minutes(3));
+        expect(devices.bulb_color.ping).toHaveBeenCalledTimes(0);
+    });
+
     it('Should allow to be disabled', async () => {
         settings.set(['availability'], false);
         await resetExtension();
 
         await advancedTime(utils.minutes(12));
         expect(devices.bulb_color.ping).toHaveBeenCalledTimes(0);
+    });
+
+    it('Should to enable availabilty for just one device', async () => {
+        settings.set(['availability'], false);
+        settings.set(['devices', devices.bulb_color.ieeeAddr, 'availability'], true);
+
+        await resetExtension();
+        MQTT.publish.mockClear();
+
+        await advancedTime(utils.minutes(11));
+        expect(devices.bulb_color.ping).toHaveBeenCalledTimes(1);
     });
 
     it('Should retrieve device state when it reconnects', async () => {
@@ -234,13 +259,12 @@ describe('Availability', () => {
         expect(endpoint.read).toHaveBeenCalledWith('lightingColorCtrl',
             ['colorMode', 'currentX', 'currentY', 'enhancedCurrentHue', 'currentSaturation', 'colorTemperature']);
 
-        // Should stop when one request fails
         endpoint.read.mockClear();
         await zigbeeHerdsman.events.deviceAnnounce({device: devices.bulb_color});
         await flushPromises();
         endpoint.read.mockImplementationOnce(() => {throw new Error('')});
         await advancedTime(utils.seconds(3));
-        expect(endpoint.read).toHaveBeenCalledTimes(1);
+        expect(endpoint.read).toHaveBeenCalledTimes(3);
     });
 
     it('Should republish availability when device is renamed', async () => {
@@ -249,11 +273,23 @@ describe('Availability', () => {
         MQTT.events.message('zigbee2mqtt/bridge/request/device/rename', stringify({from: 'bulb_color', to: 'bulb_new_name'}));
         await flushPromises();
 
+        expect(MQTT.publish).toHaveBeenCalledWith('zigbee2mqtt/bulb_color/availability',
+            null, {retain: true, qos: 0}, expect.any(Function));
         expect(MQTT.publish).toHaveBeenCalledWith('zigbee2mqtt/bulb_new_name/availability',
             'online', {retain: true, qos: 0}, expect.any(Function));
         await advancedTime(utils.hours(12));
         expect(MQTT.publish).toHaveBeenCalledWith('zigbee2mqtt/bulb_new_name/availability',
             'offline', {retain: true, qos: 0}, expect.any(Function));
+    });
+
+    it('Should publish availabiltiy payload in JSON format', async () => {
+        settings.set(['advanced', 'legacy_availability_payload'], false);
+        await resetExtension();
+        MQTT.publish.mockClear();
+        await advancedTime(utils.hours(26));
+        expect(devices.remote.ping).toHaveBeenCalledTimes(0);
+        expect(MQTT.publish).toHaveBeenCalledWith('zigbee2mqtt/remote/availability',
+            stringify({state: 'offline'}), {retain: true, qos: 0}, expect.any(Function));
     });
 
     it('Deprecated - should allow to block via advanced.availability_blocklist', async () => {

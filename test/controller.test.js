@@ -28,9 +28,10 @@ describe('Controller', () => {
         MQTT.restoreOnMock();
         zigbeeHerdsman.returnDevices.splice(0);
         mockExit = jest.fn();
+        data.writeDefaultConfiguration();
+        settings.reRead();
         controller = new Controller(jest.fn(), mockExit);
         mocksClear.forEach((m) => m.mockClear());
-        data.writeDefaultConfiguration();
         settings.reRead();
         data.writeDefaultState();
     });
@@ -43,7 +44,6 @@ describe('Controller', () => {
         await controller.start();
         expect(zigbeeHerdsman.constructor).toHaveBeenCalledWith({"network":{"panID":6754,"extendedPanID":[221,221,221,221,221,221,221,221],"channelList":[11],"networkKey":[1,3,5,7,9,11,13,15,0,2,4,6,8,10,12,13]},"databasePath":path.join(data.mockDir, "database.db"), "databaseBackupPath":path.join(data.mockDir, "database.db.backup"),"backupPath":path.join(data.mockDir, "coordinator_backup.json"),"acceptJoiningDeviceHandler": expect.any(Function),adapter: {concurrent: null, delay: null, disableLED: false}, "serialPort":{"baudRate":undefined,"rtscts":undefined,"path":"/dev/dummy"}}, logger);
         expect(zigbeeHerdsman.start).toHaveBeenCalledTimes(1);
-        expect(zigbeeHerdsman.setLED).toHaveBeenCalledTimes(0);
         expect(zigbeeHerdsman.setTransmitPower).toHaveBeenCalledTimes(0);
         expect(zigbeeHerdsman.permitJoin).toHaveBeenCalledTimes(1);
         expect(zigbeeHerdsman.permitJoin).toHaveBeenCalledWith(true, undefined, undefined);
@@ -181,24 +181,8 @@ describe('Controller', () => {
         expect(zigbeeHerdsman.devices.bulb.removeFromNetwork).toHaveBeenCalledTimes(1);
     });
 
-    it('Should remove non whitelisted devices on startup', async () => {
-        settings.set(['whitelist'], [zigbeeHerdsman.devices.bulb_color.ieeeAddr]);
-        await controller.start();
-        await flushPromises();
-        expect(zigbeeHerdsman.devices.bulb_color.removeFromNetwork).toHaveBeenCalledTimes(0);
-        expect(zigbeeHerdsman.devices.bulb.removeFromNetwork).toHaveBeenCalledTimes(1);
-    });
-
     it('Should remove device on blocklist on startup', async () => {
         settings.set(['blocklist'], [zigbeeHerdsman.devices.bulb_color.ieeeAddr]);
-        await controller.start();
-        await flushPromises();
-        expect(zigbeeHerdsman.devices.bulb_color.removeFromNetwork).toHaveBeenCalledTimes(1);
-        expect(zigbeeHerdsman.devices.bulb.removeFromNetwork).toHaveBeenCalledTimes(0);
-    });
-
-    it('Should remove banned devices on startup', async () => {
-        settings.set(['ban'], [zigbeeHerdsman.devices.bulb_color.ieeeAddr]);
         await controller.start();
         await flushPromises();
         expect(zigbeeHerdsman.devices.bulb_color.removeFromNetwork).toHaveBeenCalledTimes(1);
@@ -227,13 +211,6 @@ describe('Controller', () => {
         await controller.start();
         expect(zigbeeHerdsman.permitJoin).toHaveBeenCalledTimes(1);
         expect(zigbeeHerdsman.permitJoin).toHaveBeenCalledWith(false, undefined, undefined);
-    });
-
-    it('Start controller with disable_led', async () => {
-        settings.set(['serial', 'disable_led'], true);
-        await controller.start();
-        expect(zigbeeHerdsman.setLED).toHaveBeenCalledTimes(1);
-        expect(zigbeeHerdsman.setLED).toHaveBeenCalledWith(false);
     });
 
     it('Start controller with transmit power', async () => {
@@ -638,11 +615,13 @@ describe('Controller', () => {
     });
 
     it('Should disable legacy options on new network start', async () => {
-        expect(settings.get().advanced.homeassistant_legacy_entity_attributes).toBeTruthy();
+        settings.set(['homeassistant'], true);
+        settings.reRead();
+        expect(settings.get().homeassistant.legacy_entity_attributes).toBeTruthy();
         expect(settings.get().advanced.legacy_api).toBeTruthy();
         zigbeeHerdsman.start.mockReturnValueOnce('reset');
         await controller.start();
-        expect(settings.get().advanced.homeassistant_legacy_entity_attributes).toBeFalsy();
+        expect(settings.get().homeassistant.legacy_entity_attributes).toBeFalsy();
         expect(settings.get().advanced.legacy_api).toBeFalsy();
     });
 
@@ -652,9 +631,29 @@ describe('Controller', () => {
         await flushPromises();
         MQTT.publish.mockClear();
         const device = zigbeeHerdsman.devices.remote;
-        await zigbeeHerdsman.events.lastSeenChanged({device});
+        await zigbeeHerdsman.events.lastSeenChanged({device, reason: 'deviceAnnounce'});
         expect(MQTT.publish).toHaveBeenCalledTimes(1);
         expect(MQTT.publish).toHaveBeenCalledWith(
             'zigbee2mqtt/remote', stringify({"brightness":255,"last_seen":1000}), { qos: 0, retain: true }, expect.any(Function));
+    });
+
+    it('Should not publish last seen changes when reason is messageEmitted', async () => {
+        settings.set(['advanced', 'last_seen'], 'epoch');
+        await controller.start();
+        await flushPromises();
+        MQTT.publish.mockClear();
+        const device = zigbeeHerdsman.devices.remote;
+        await zigbeeHerdsman.events.lastSeenChanged({device, reason: 'messageEmitted'});
+        expect(MQTT.publish).toHaveBeenCalledTimes(0);
+    });
+
+    it('Ignore messages from coordinator', async () => {
+        // https://github.com/Koenkk/zigbee2mqtt/issues/9218
+        await controller.start();
+        const device = zigbeeHerdsman.devices.coordinator;
+        const payload = {device, endpoint: device.getEndpoint(1), type: 'attributeReport', linkquality: 10, cluster: 'genBasic', data: {modelId: device.modelID}};
+        await zigbeeHerdsman.events.message(payload);
+        await flushPromises();
+        expect(logger.debug).toHaveBeenCalledWith(`Received Zigbee message from 'Coordinator', type 'attributeReport', cluster 'genBasic', data '{"modelId":null}' from endpoint 1, ignoring since it is from coordinator`);
     });
 });

@@ -64,7 +64,7 @@ export default class Bridge extends Extension {
         this.zigbee2mqttVersion = await utils.getZigbee2MQTTVersion();
         this.coordinatorVersion = await this.zigbee.getCoordinatorVersion();
 
-        this.eventBus.onDeviceRenamed(this, () => this.publishInfo());
+        this.eventBus.onEntityRenamed(this, () => this.publishInfo());
         this.eventBus.onGroupMembersChanged(this, () => this.publishGroups());
         this.eventBus.onDevicesChanged(this, () => this.publishDevices() && this.publishInfo());
         this.eventBus.onPermitJoinChanged(this, () => !this.zigbee.isStopping() && this.publishInfo());
@@ -392,13 +392,14 @@ export default class Bridge extends Extension {
 
         const ID = message.id;
         const entity = this.getEntity(entityType, ID);
-        const oldOptions = objectAssignDeep({}, cleanup(entity.settings));
+        const oldOptions = objectAssignDeep({}, cleanup(entity.options));
         settings.changeEntityOptions(ID, message.options);
-        const newOptions = cleanup(entity.settings);
+        const newOptions = cleanup(entity.options);
         await this.publishInfo();
 
         logger.info(`Changed config for ${entityType} ${ID}`);
 
+        this.eventBus.emitEntityOptionsChanged({from: oldOptions, to: newOptions, entity});
         return utils.getResponse(message, {from: oldOptions, to: newOptions, id: ID}, null);
     }
 
@@ -418,7 +419,7 @@ export default class Bridge extends Extension {
         await endpoint.configureReporting(message.cluster, [{
             attribute: message.attribute, minimumReportInterval: message.minimum_report_interval,
             maximumReportInterval: message.maximum_report_interval, reportableChange: message.reportable_change,
-        }]);
+        }], message.options);
 
         this.publishDevices();
 
@@ -447,16 +448,17 @@ export default class Bridge extends Extension {
         const homeAssisantRename = message.hasOwnProperty('homeassistant_rename') ?
             message.homeassistant_rename : false;
         const entity = this.getEntity(entityType, from);
-        const oldFriendlyName = entity.settings.friendly_name;
+        const oldFriendlyName = entity.options.friendly_name;
 
         settings.changeFriendlyName(from, to);
 
         // Clear retained messages
         this.mqtt.publish(oldFriendlyName, '', {retain: true});
 
+        this.eventBus.emitEntityRenamed({entity: entity, homeAssisantRename, from: oldFriendlyName, to});
+
         if (entity instanceof Device) {
             this.publishDevices();
-            this.eventBus.emitDeviceRenamed({device: entity, homeAssisantRename, from: oldFriendlyName, to});
         } else {
             this.publishGroups();
             this.publishInfo();
@@ -565,7 +567,10 @@ export default class Bridge extends Extension {
         const payload = {
             version: this.zigbee2mqttVersion.version,
             commit: this.zigbee2mqttVersion.commitHash,
-            coordinator: this.coordinatorVersion,
+            coordinator: {
+                ieee_address: this.zigbee.firstCoordinatorEndpoint().getDevice().ieeeAddr,
+                ...this.coordinatorVersion,
+            },
             network: utils.toSnakeCase(await this.zigbee.getNetworkParameters()),
             log_level: logger.getLevel(),
             permit_join: this.zigbee.getPermitJoin(),
@@ -645,6 +650,7 @@ export default class Bridge extends Extension {
                 network_address: device.zh.networkAddress,
                 supported: !!device.definition,
                 friendly_name: device.name,
+                description: device.options.description,
                 definition: this.getDefinitionPayload(device),
                 power_source: device.zh.powerSource,
                 software_build_id: device.zh.softwareBuildID,
@@ -666,6 +672,7 @@ export default class Bridge extends Extension {
             return {
                 id: g.ID,
                 friendly_name: g.ID === 901 ? 'default_bind_group' : g.name,
+                description: g.options.description,
                 scenes: this.getScenes(g.zh),
                 members: g.zh.members.map((e) => {
                     return {ieee_address: e.getDevice().ieeeAddr, endpoint: e.ID};
@@ -678,7 +685,7 @@ export default class Bridge extends Extension {
 
     getDefinitionPayload(device: Device): DefinitionPayload {
         if (!device.definition) return null;
-        let icon = device.settings.icon ? device.settings.icon : device.definition.icon;
+        let icon = device.options.icon ? device.options.icon : device.definition.icon;
         if (icon) {
             icon = icon.replace('${zigbeeModel}', utils.sanitizeImageParameter(device.zh.modelID));
             icon = icon.replace('${model}', utils.sanitizeImageParameter(device.definition.model));
@@ -688,7 +695,7 @@ export default class Bridge extends Extension {
             model: device.definition.model,
             vendor: device.definition.vendor,
             description: device.definition.description,
-            exposes: device.definition.exposes,
+            exposes: device.exposes(),
             supports_ota: !!device.definition.ota,
             options: device.definition.options,
             icon,

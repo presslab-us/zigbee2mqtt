@@ -70,6 +70,7 @@ async function getZigbee2MQTTVersion(includeCommitHash=true): Promise<{commitHas
                 commitHash = commit.shortHash;
             }
 
+            commitHash = commitHash.trim();
             resolve({commitHash, version});
         });
     });
@@ -245,8 +246,8 @@ function sanitizeImageParameter(parameter: string): string {
 }
 
 function isAvailabilityEnabledForDevice(device: Device, settings: Settings): boolean {
-    if (device.settings.hasOwnProperty('availability')) {
-        return !!device.settings.availability;
+    if (device.options.hasOwnProperty('availability')) {
+        return !!device.options.availability;
     }
 
     // availability_timeout = deprecated
@@ -276,9 +277,28 @@ function isZHGroup(obj: unknown): obj is zh.Group {
     return obj.constructor.name.toLowerCase() === 'group';
 }
 
+function availabilityPayload(state: 'online' | 'offline', settings: Settings): string {
+    return settings.advanced.legacy_availability_payload ? state : JSON.stringify({state});
+}
+
 const hours = (hours: number): number => 1000 * 60 * 60 * hours;
 const minutes = (minutes: number): number => 1000 * 60 * minutes;
 const seconds = (seconds: number): number => 1000 * seconds;
+
+function publishLastSeen(data: eventdata.LastSeenChanged, settings: Settings, allowMessageEmitted: boolean,
+    publishEntityState: PublishEntityState): void {
+    /**
+     * Prevent 2 MQTT publishes when 1 message event is received;
+     * - In case reason == messageEmitted, receive.ts will only call this when it did not publish a
+     *      message based on the received zigbee message. In this case allowMessageEmitted has to be true.
+     * - In case reason !== messageEmitted, controller.ts will call this based on the zigbee-herdsman
+     *      lastSeenChanged event.
+     */
+    const allow = data.reason !== 'messageEmitted' || (data.reason === 'messageEmitted' && allowMessageEmitted);
+    if (settings.advanced.last_seen && settings.advanced.last_seen !== 'disable' && allow) {
+        publishEntityState(data.device, {}, 'lastSeenChanged');
+    }
+}
 
 
 export default {
@@ -286,5 +306,5 @@ export default {
     equalsPartial, getObjectProperty, getResponse, parseJSON, loadModuleFromText, loadModuleFromFile,
     getExternalConvertersDefinitions, removeNullPropertiesFromObject, toNetworkAddressHex, toSnakeCase,
     parseEntityID, isEndpoint, isZHGroup, hours, minutes, seconds, validateFriendlyName, sleep,
-    sanitizeImageParameter, isAvailabilityEnabledForDevice,
+    sanitizeImageParameter, isAvailabilityEnabledForDevice, publishLastSeen, availabilityPayload,
 };

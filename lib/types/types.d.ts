@@ -95,7 +95,7 @@ declare global {
         }
 
         interface DefinitionExposeFeature {name: string, endpoint?: string,
-            property: string, value_max?: number, value_min?: number,
+            property: string, value_max?: number, value_min?: number, unit?: string,
             value_off?: string, value_on?: string, value_step?: number, values: string[], access: number}
 
         interface DefinitionExpose {
@@ -114,8 +114,9 @@ declare global {
             description: string
             options: zhc.DefinitionExpose[],
             vendor: string
-            exposes: DefinitionExpose[]
-            configure?: (device: zh.Device, coordinatorEndpoint: zh.Endpoint, logger: Logger) => Promise<void>;
+            exposes: DefinitionExpose[] | ((device: zh.Device, options: KeyValue) => DefinitionExpose[])
+            configure?: (device: zh.Device, coordinatorEndpoint: zh.Endpoint, logger: Logger,
+                options?: DeviceOptions) => Promise<void>;
             onEvent?: (type: string, data: KeyValue, device: zh.Device, settings: KeyValue) => Promise<void>;
             ota?: {
                 isUpdateAvailable: (device: zh.Device, logger: Logger, data?: KeyValue) => Promise<boolean>;
@@ -129,23 +130,26 @@ declare global {
     }
 
     namespace eventdata {
-        type DeviceRenamed = { device: Device, homeAssisantRename: boolean, from: string, to: string };
+        type EntityRenamed = { entity: Device | Group, homeAssisantRename: boolean, from: string, to: string };
         type DeviceRemoved = { ieeeAddr: string, name: string };
         type MQTTMessage = { topic: string, message: string };
         type MQTTMessagePublished = { topic: string, payload: string, options: {retain: boolean, qos: number} };
         type StateChange = {
             entity: Device | Group, from: KeyValue, to: KeyValue, reason: string | null, update: KeyValue };
         type PermitJoinChanged = ZHEvents.PermitJoinChangedPayload;
-        type LastSeenChanged = { device: Device };
+        type LastSeenChanged = { device: Device,
+            reason: 'deviceAnnounce' | 'networkAddress' | 'deviceJoined' | 'messageEmitted' | 'messageNonEmitted'; };
         type DeviceNetworkAddressChanged = { device: Device };
         type DeviceAnnounce = { device: Device };
         type DeviceInterview = { device: Device, status: 'started' | 'successful' | 'failed' };
         type DeviceJoined = { device: Device };
-        type ReportingDisabled = { device: Device };
+        type EntityOptionsChanged = { entity: Device | Group, from: KeyValue, to: KeyValue };
+        type Reconfigure = { device: Device };
         type DeviceLeave = { ieeeAddr: string, name: string };
         type GroupMembersChanged = {group: Group, action: 'remove' | 'add' | 'remove_all',
             endpoint: zh.Endpoint, skipDisableReporting: boolean };
-        type PublishEntityState = {entity: Group | Device, message: KeyValue, stateChangeReason: StateChangeReason };
+        type PublishEntityState = {entity: Group | Device, message: KeyValue, stateChangeReason: StateChangeReason,
+                payload: KeyValue};
         type DeviceMessage = {
             type: ZHEvents.MessagePayloadType;
             device: Device;
@@ -161,24 +165,18 @@ declare global {
     // Settings
     // eslint-disable camelcase
     interface Settings {
-        homeassistant?: boolean,
-        devices?: {[s: string]: DeviceSettings},
-        groups?: {[s: string]: GroupSettings},
-        passlist: string[],
-        blocklist: string[],
-        whitelist: string[],
-        ban: string[],
-        availability?: boolean | {
-            active?: {timeout?: number},
-            passive?: {timeout?: number}
+        homeassistant?: {
+            discovery_topic: string,
+            status_topic: string,
+            legacy_entity_attributes: boolean,
+            legacy_triggers: boolean,
         },
-        permit_join: boolean,
-        frontend?: {
-            auth_token?: string,
-            host?: string,
-            port?: number,
-            url?: string,
+        permit_join?: boolean,
+        availability?: {
+            active: {timeout: number},
+            passive: {timeout: number}
         },
+        external_converters: string[],
         mqtt: {
             base_topic: string,
             include_device_information: boolean,
@@ -195,11 +193,14 @@ declare global {
             reject_unauthorized?: boolean,
         },
         serial: {
-            disable_led?: boolean,
+            disable_led: boolean,
             port?: string,
-            adapter?: 'deconz' | 'zstack' | 'ezsp' | 'zigate'
+            adapter?: 'deconz' | 'zstack' | 'ezsp' | 'zigate',
+            baudrate?: number,
+            rtscts?: boolean,
         },
-        device_options: KeyValue,
+        passlist: string[],
+        blocklist: string[],
         map_options: {
             graphviz: {
                 colors: {
@@ -220,12 +221,24 @@ declare global {
                 },
             },
         },
-        experimental: {
-            output: 'json' | 'attribute' | 'attribute_and_json',
-            transmit_power?: number,
+        ota: {
+            update_check_interval: number,
+            disable_automatic_update_check: boolean,
+            zigbee_ota_override_index_location?: string,
+            ikea_ota_use_test_url?: boolean,
         },
+        frontend?: {
+            auth_token?: string,
+            host?: string,
+            port?: number,
+            url?: string,
+        },
+        devices?: {[s: string]: DeviceOptions},
+        groups?: {[s: string]: GroupOptions},
+        device_options: KeyValue,
         advanced: {
             legacy_api: boolean,
+            legacy_availability_payload: boolean,
             log_rotation: boolean,
             log_symlink_current: boolean,
             log_output: ('console' | 'file' | 'syslog')[],
@@ -233,7 +246,6 @@ declare global {
             log_file: string,
             log_level: 'debug' | 'info' | 'error' | 'warn',
             log_syslog: KeyValue,
-            soft_reset_timeout: number,
             pan_id: number | 'GENERATE',
             ext_pan_id: number[],
             channel: number,
@@ -245,30 +257,21 @@ declare global {
             last_seen: 'disable' | 'ISO_8601' | 'ISO_8601_local' | 'epoch',
             elapsed: boolean,
             network_key: number[] | 'GENERATE',
-            report: boolean,
-            homeassistant_discovery_topic: string,
-            homeassistant_status_topic: string,
-            homeassistant_legacy_entity_attributes: boolean,
-            homeassistant_legacy_triggers: boolean,
             timestamp_format: string,
-            baudrate?: number,
-            rtscts?: boolean,
-            ikea_ota_use_test_url?: boolean,
-            // below are deprecated
+            output: 'json' | 'attribute' | 'attribute_and_json',
+            transmit_power?: number,
+            // Everything below is deprecated
             availability_timeout?: number,
             availability_blocklist?: string[],
             availability_passlist?: string[],
             availability_blacklist?: string[],
             availability_whitelist?: string[],
+            soft_reset_timeout: number,
+            report: boolean,
         },
-        ota: {
-            update_check_interval: number,
-            disable_automatic_update_check: boolean
-        },
-        external_converters: string[],
     }
 
-    interface DeviceSettings {
+    interface DeviceOptions {
         ID?: string,
         retention?: number,
         availability?: boolean | {timeout: number},
@@ -282,9 +285,11 @@ declare global {
         legacy?: boolean,
         filtered_attributes?: string[],
         friendly_name: string,
+        description?: string,
+        qos?: 0 | 1 | 2,
     }
 
-    interface GroupSettings {
+    interface GroupOptions {
         devices?: string[],
         ID?: number,
         optimistic?: boolean,
@@ -293,6 +298,8 @@ declare global {
         homeassistant?: KeyValue,
         filtered_attributes?: string[],
         friendly_name: string,
+        description?: string,
+        qos?: 0 | 1 | 2,
     }
 }
 

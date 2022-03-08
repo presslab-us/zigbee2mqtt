@@ -4,6 +4,7 @@ import debounce from 'debounce';
 import Extension from './extension';
 import stringify from 'json-stable-stringify-without-jsonify';
 import bind from 'bind-decorator';
+import utils from '../util/utils';
 
 type DebounceFunction = (() => void) & { clear(): void; } & { flush(): void; };
 
@@ -24,7 +25,7 @@ export default class Receive extends Extension {
          */
         if (data.entity.isDevice() && this.debouncers[data.entity.ieeeAddr] &&
             data.stateChangeReason !== 'publishDebounce' && data.stateChangeReason !== 'lastSeenChanged') {
-            for (const key of Object.keys(data.message)) {
+            for (const key of Object.keys(data.payload)) {
                 delete this.debouncers[data.entity.ieeeAddr].payload[key];
             }
         }
@@ -76,7 +77,8 @@ export default class Receive extends Extension {
                 logger.warn(
                     `Received message from unsupported device with Zigbee model '${data.device.zh.modelID}' ` +
                     `and manufacturer name '${data.device.zh.manufacturerName}'`);
-                logger.warn(`Please see: https://www.zigbee2mqtt.io/how_tos/how_to_support_new_devices.html.`);
+                // eslint-disable-next-line max-len
+                logger.warn(`Please see: https://www.zigbee2mqtt.io/advanced/support-new-devices/01_support_new_devices.html`);
             }
 
             return false;
@@ -89,24 +91,11 @@ export default class Receive extends Extension {
         /* istanbul ignore next */
         if (!data.device) return;
 
-        /**
-         * Handling of re-transmitted Xiaomi messages.
-         * https://github.com/Koenkk/zigbee2mqtt/issues/1238
-         * https://github.com/Koenkk/zigbee2mqtt/issues/3592
-         *
-         * Some Xiaomi router devices re-transmit messages from Xiaomi end devices.
-         * The network address of these message is set to the one of the Xiaomi router.
-         * Therefore it looks like if the message came from the Xiaomi router, while in
-         * fact it came from the end device.
-         * Handling these message would result in false state updates.
-         * The group ID attribute of these message defines the network address of the end device.
-         */
-        if (data.device.isXiaomi() && data.device.zh.type === 'Router' && data.groupID) {
-            logger.debug('Handling re-transmitted Xiaomi message');
-            data = {...data, device: this.zigbee.deviceByNetworkAddress(data.groupID)};
+        if (!this.shouldProcess(data)) {
+            utils.publishLastSeen({device: data.device, reason: 'messageEmitted'},
+                settings.get(), true, this.publishEntityState);
+            return;
         }
-
-        if (!this.shouldProcess(data)) return;
 
         const converters = data.device.definition.fromZigbee.filter((c) => {
             const type = Array.isArray(c.type) ? c.type.includes(data.type) : c.type === data.type;
@@ -114,10 +103,12 @@ export default class Receive extends Extension {
         });
 
         // Check if there is an available converter, genOta messages are not interesting.
-        const ignoreClusters: (string | number)[] = ['genOta', 'genTime', 'genBasic'];
+        const ignoreClusters: (string | number)[] = ['genOta', 'genTime', 'genBasic', 'genPollCtrl'];
         if (converters.length == 0 && !ignoreClusters.includes(data.cluster)) {
             logger.debug(`No converter available for '${data.device.definition.model}' with ` +
                 `cluster '${data.cluster}' and type '${data.type}' and data '${stringify(data.data)}'`);
+            utils.publishLastSeen({device: data.device, reason: 'messageEmitted'},
+                settings.get(), true, this.publishEntityState);
             return;
         }
 
@@ -137,9 +128,9 @@ export default class Receive extends Extension {
             }
 
             // Check if we have to debounce
-            if (data.device.settings.debounce) {
-                this.publishDebounce(data.device, payload, data.device.settings.debounce,
-                    data.device.settings.debounce_ignore);
+            if (data.device.options.debounce) {
+                this.publishDebounce(data.device, payload, data.device.options.debounce,
+                    data.device.options.debounce_ignore);
             } else {
                 this.publishEntityState(data.device, payload);
             }
@@ -150,7 +141,7 @@ export default class Receive extends Extension {
         for (const converter of converters) {
             try {
                 const converted = await converter.convert(
-                    data.device.definition, data, publish, data.device.settings, meta);
+                    data.device.definition, data, publish, data.device.options, meta);
                 if (converted) {
                     payload = {...payload, ...converted};
                 }
@@ -162,6 +153,9 @@ export default class Receive extends Extension {
 
         if (Object.keys(payload).length) {
             publish(payload);
+        } else {
+            utils.publishLastSeen({device: data.device, reason: 'messageEmitted'},
+                settings.get(), true, this.publishEntityState);
         }
     }
 }

@@ -13,17 +13,14 @@ export default class Availability extends Extension {
     private pingQueueExecuting = false;
 
     private getTimeout(device: Device): number {
-        if (typeof device.settings.availability === 'object' && device.settings.availability?.timeout != null) {
-            return utils.minutes(device.settings.availability.timeout);
+        if (typeof device.options.availability === 'object' && device.options.availability?.timeout != null) {
+            return utils.minutes(device.options.availability.timeout);
         }
 
         const key = this.isActiveDevice(device) ? 'active' : 'passive';
-        const availabilitySettings = settings.get().availability;
-        if (typeof availabilitySettings === 'object' && availabilitySettings[key]?.timeout != null) {
-            return utils.minutes(availabilitySettings[key]?.timeout);
-        }
-
-        return key === 'active' ? utils.minutes(10) : utils.hours(25);
+        let value = settings.get().availability?.[key]?.timeout;
+        if (value == null) value = key == 'active' ? 10 : 1500;
+        return utils.minutes(value);
     }
 
     private isActiveDevice(device: Device): boolean {
@@ -77,7 +74,7 @@ export default class Availability extends Extension {
                 logger.debug(`Succesfully pinged '${device.name}' (attempt ${i + 1}/${attempts})`);
                 break;
             } catch (error) {
-                logger.error(`Failed to ping '${device.name}' (attempt ${i + 1}/${attempts}, ${error.message})`);
+                logger.warn(`Failed to ping '${device.name}' (attempt ${i + 1}/${attempts}, ${error.message})`);
                 // Try again in 3 seconds.
                 const lastAttempt = i - 1 === attempts;
                 !lastAttempt && await utils.sleep(3);
@@ -95,14 +92,22 @@ export default class Availability extends Extension {
     }
 
     override async start(): Promise<void> {
-        logger.warn('Using experimental new availability feature');
+        this.eventBus.onEntityRenamed(this, (data) => {
+            if (data.entity.isDevice() && utils.isAvailabilityEnabledForDevice(data.entity, settings.get())) {
+                this.mqtt.publish(`${data.from}/availability`, null, {retain: true, qos: 0});
+                this.publishAvailability(data.entity, false, true);
+            }
+        });
 
-        this.eventBus.onDeviceRenamed(this, (data: eventdata.DeviceRenamed) =>
-            this.publishAvailability(data.device, false, true));
-        this.eventBus.onDeviceLeave(this, (data: eventdata.DeviceLeave) => clearTimeout(this.timers[data.ieeeAddr]));
-        this.eventBus.onDeviceAnnounce(this, (data: eventdata.DeviceAnnounce) => this.retrieveState(data.device));
+        this.eventBus.onDeviceRemoved(this, (data) => clearTimeout(this.timers[data.ieeeAddr]));
+        this.eventBus.onDeviceLeave(this, (data) => clearTimeout(this.timers[data.ieeeAddr]));
+        this.eventBus.onDeviceAnnounce(this, (data) => this.retrieveState(data.device));
         this.eventBus.onLastSeenChanged(this, this.onLastSeenChanged);
+        this.eventBus.onPublishAvailability(this, this.publishAvailabilityForAllDevices);
+        this.publishAvailabilityForAllDevices();
+    }
 
+    @bind private publishAvailabilityForAllDevices(): void {
         for (const device of this.zigbee.devices(false)) {
             if (utils.isAvailabilityEnabledForDevice(device, settings.get())) {
                 // Publish initial availablility
@@ -142,7 +147,7 @@ export default class Availability extends Extension {
         }
 
         const topic = `${device.name}/availability`;
-        const payload = available ? 'online' : 'offline';
+        const payload = utils.availabilityPayload(available ? 'online' : 'offline', settings.get());
         this.availabilityCache[device.ieeeAddr] = available;
         this.mqtt.publish(topic, payload, {retain: true, qos: 0});
     }
@@ -157,8 +162,8 @@ export default class Availability extends Extension {
     }
 
     override async stop(): Promise<void> {
-        super.stop();
         Object.values(this.timers).forEach((t) => clearTimeout(t));
+        super.stop();
     }
 
     private retrieveState(device: Device): void {
@@ -167,18 +172,17 @@ export default class Availability extends Extension {
          * device can send multiple times after each other.
          */
         if (device.definition && !device.zh.interviewing && !this.retrieveStateDebouncers[device.ieeeAddr]) {
-            this.retrieveStateDebouncers[device.ieeeAddr] = debounce(async () => {
-                try {
-                    logger.debug(`Retrieving state of '${device.name}' after reconnect`);
-                    // Color and color temperature converters do both, only needs to be called once.
-                    const keySet = [['state'], ['brightness'], ['color', 'color_temp']];
-                    for (const keys of keySet) {
-                        const converter = device.definition.toZigbee.find((c) => c.key.find((k) => keys.includes(k)));
-                        await converter?.convertGet?.(device.endpoint(), keys[0],
-                            {message: this.state.get(device) || {}, mapped: device.definition});
-                    }
-                } catch (error) {
-                    logger.error(`Failed to read state of '${device.name}' after reconnect (${error.message})`);
+            this.retrieveStateDebouncers[device.ieeeAddr] = debounce(() => {
+                logger.debug(`Retrieving state of '${device.name}' after reconnect`);
+                // Color and color temperature converters do both, only needs to be called once.
+                const keySet = [['state'], ['brightness'], ['color', 'color_temp']];
+                for (const keys of keySet) {
+                    const converter = device.definition.toZigbee.find((c) => c.key.find((k) => keys.includes(k)));
+                    converter?.convertGet?.(device.endpoint(), keys[0],
+                        {message: this.state.get(device) || {}, mapped: device.definition})
+                        .catch((e) => {
+                            logger.error(`Failed to read state of '${device.name}' after reconnect (${e.message})`);
+                        });
                 }
             }, utils.seconds(2));
         }

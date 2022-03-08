@@ -27,10 +27,17 @@ export default class EventBus {
         this.on('permitJoinChanged', callback, key);
     }
 
-    public emitDeviceRenamed(data: eventdata.DeviceRenamed): void {
+    public emitPublishAvailability(): void {
+        this.emitter.emit('publishAvailability');
+    }
+    public onPublishAvailability(key: ListenerKey, callback: () => void): void {
+        this.on('publishAvailability', callback, key);
+    }
+
+    public emitEntityRenamed(data: eventdata.EntityRenamed): void {
         this.emitter.emit('deviceRenamed', data);
     }
-    public onDeviceRenamed(key: ListenerKey, callback: (data: eventdata.DeviceRenamed) => void): void {
+    public onEntityRenamed(key: ListenerKey, callback: (data: eventdata.EntityRenamed) => void): void {
         this.on('deviceRenamed', callback, key);
     }
 
@@ -75,6 +82,13 @@ export default class EventBus {
     }
     public onDeviceJoined(key: ListenerKey, callback: (data: eventdata.DeviceJoined) => void): void {
         this.on('deviceJoined', callback, key);
+    }
+
+    public emitEntityOptionsChanged(data: eventdata.EntityOptionsChanged): void {
+        this.emitter.emit('entityOptionsChanged', data);
+    }
+    public onEntityOptionsChanged(key: ListenerKey, callback: (data: eventdata.EntityOptionsChanged) => void): void {
+        this.on('entityOptionsChanged', callback, key);
     }
 
     public emitDeviceLeave(data: eventdata.DeviceLeave): void {
@@ -133,11 +147,11 @@ export default class EventBus {
         this.on('scenesChanged', callback, key);
     }
 
-    public emitReportingDisabled(data: eventdata.ReportingDisabled): void {
-        this.emitter.emit('reportingDisabled', data);
+    public emitReconfigure(data: eventdata.Reconfigure): void {
+        this.emitter.emit('reconfigure', data);
     }
-    public onReportingDisabled(key: ListenerKey, callback: (data: eventdata.ReportingDisabled) => void): void {
-        this.on('reportingDisabled', callback, key);
+    public onReconfigure(key: ListenerKey, callback: (data: eventdata.Reconfigure) => void): void {
+        this.on('reconfigure', callback, key);
     }
 
     public emitStateChange(data: eventdata.StateChange): void {

@@ -47,6 +47,10 @@ async function build(reason) {
         exec('npm run build', {cwd: __dirname}, async (err, stdout, stderr) => {
             if (err) {
                 process.stdout.write(', failed\n');
+                if (err.code === 134) {
+                    process.stderr.write(
+                        '\n\nBuild failed; ran out-of-memory, free some memory (RAM) and start again\n\n');
+                }
                 reject(err);
             } else {
                 process.stdout.write(', finished\n');
@@ -87,7 +91,7 @@ async function start() {
         for (const error of errors) {
             console.log(`- ${error}`);
         }
-        console.log(`\nIf you don't know how to solve this, read https://www.zigbee2mqtt.io/information/configuration.html`); // eslint-disable-line
+        console.log(`\nIf you don't know how to solve this, read https://www.zigbee2mqtt.io/guide/configuration`); // eslint-disable-line
         console.log(`\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n`);
         exit(1);
     }

@@ -1,5 +1,5 @@
 import http from 'http';
-import serveStatic from 'serve-static';
+import gzipStatic, {RequestHandler} from 'connect-gzip-static';
 import finalhandler from 'finalhandler';
 import logger from '../util/logger';
 import frontend from 'zigbee2mqtt-frontend';
@@ -17,18 +17,18 @@ import bind from 'bind-decorator';
  */
 export default class Frontend extends Extension {
     private mqttBaseTopic = settings.get().mqtt.base_topic;
-    private host = settings.get().frontend.host || '0.0.0.0';
-    private port = settings.get().frontend.port || 8080;
-    private authToken = settings.get().frontend.auth_token || false;
+    private host = settings.get().frontend.host;
+    private port = settings.get().frontend.port;
+    private authToken = settings.get().frontend.auth_token;
     private retainedMessages = new Map();
     private server: http.Server;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    private fileServer: serveStatic.RequestHandler<any>;
+    private fileServer: RequestHandler;
     private wss: WebSocket.Server = null;
 
     constructor(zigbee: Zigbee, mqtt: MQTT, state: State, publishEntityState: PublishEntityState,
         eventBus: EventBus, enableDisableExtension: (enable: boolean, name: string) => Promise<void>,
-        restartCallback: () => void, addExtension: (extension: Extension) => void) {
+        restartCallback: () => void, addExtension: (extension: Extension) => Promise<void>) {
         super(zigbee, mqtt, state, publishEntityState, eventBus, enableDisableExtension, restartCallback, addExtension);
         this.eventBus.onMQTTMessagePublished(this, this.onMQTTPublishMessage);
     }
@@ -37,14 +37,16 @@ export default class Frontend extends Extension {
         this.server = http.createServer(this.onRequest);
         this.server.on('upgrade', this.onUpgrade);
 
-        /* istanbul ignore next */ // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const options = {setHeaders: (res: any, path: any): void => {
-            if (path.endsWith('index.html')) {
-                res.setHeader('Cache-Control', 'no-store');
-            }
-        }};
-
-        this.fileServer = serveStatic(frontend.getPath(), options);
+        /* istanbul ignore next */
+        const options = {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            setHeaders: (res: any, path: string): void => {
+                if (path.endsWith('index.html')) {
+                    res.setHeader('Cache-Control', 'no-store');
+                }
+            },
+        };
+        this.fileServer = gzipStatic(frontend.getPath(), options);
         this.wss = new WebSocket.Server({noServer: true});
         this.wss.on('connection', this.onWebSocketConnection);
 

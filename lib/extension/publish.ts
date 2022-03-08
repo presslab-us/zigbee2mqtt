@@ -10,7 +10,7 @@ import Device from '../model/device';
 import bind from 'bind-decorator';
 
 const topicRegex = new RegExp(`^(.+?)(?:/(${utils.endpointNames.join('|')}|\\d+))?/(get|set)(?:/(.+))?`);
-const propertyEndpointRegex = new RegExp(`^(.*)_(${utils.endpointNames.join('|')}|\\d+)$`);
+const propertyEndpointRegex = new RegExp(`^(.*?)_(${utils.endpointNames.join('|')})$`);
 const stateValues = ['on', 'off', 'toggle', 'open', 'close', 'stop', 'lock', 'unlock'];
 const sceneConverterKeys = ['scene_store', 'scene_add', 'scene_remove', 'scene_remove_all'];
 
@@ -91,7 +91,7 @@ export default class Publish extends Extension {
         // Only do this when the retrieve_state option is enabled for this device.
         // retrieve_state == decprecated
         if (re instanceof Device && result && result.hasOwnProperty('readAfterWriteTime') &&
-            re.settings.retrieve_state
+            re.options.retrieve_state
         ) {
             setTimeout(() => converter.convertGet(target, key, meta), result.readAfterWriteTime);
         }
@@ -128,17 +128,13 @@ export default class Publish extends Extension {
 
         // Get entity details
         const definition = re instanceof Device ? re.definition : re.membersDefinitions();
-        if (definition == null) {
-            logger.error(`Cannot publish to unsupported device '${re.name}'`);
-            return;
-        }
         const target = re instanceof Group ? re.zh : re.endpoint(parsedTopic.endpoint);
         if (target == null) {
             logger.error(`Device '${re.name}' has no endpoint '${parsedTopic.endpoint}'`);
             return;
         }
         const device = re instanceof Device ? re.zh : null;
-        const entitySettings = re.settings;
+        const entitySettings = re.options;
         const entityState = this.state.get(re) || {};
         const membersState = re instanceof Group ?
             Object.fromEntries(re.zh.members.map((e) => [e.getDevice().ieeeAddr,
@@ -149,8 +145,11 @@ export default class Publish extends Extension {
                 const c = new Set(definition.map((d) => d.toZigbee).flat());
                 if (c.size == 0) converters = defaultGroupConverters;
                 else converters = Array.from(c);
-            } else {
+            } else if (definition) {
                 converters = definition.toZigbee;
+            } else {
+                converters = [zigbeeHerdsmanConverters.toZigbeeConverters.read,
+                    zigbeeHerdsmanConverters.toZigbeeConverters.write];
             }
         }
 
@@ -216,7 +215,7 @@ export default class Publish extends Extension {
             }
 
             if (!converter) {
-                logger.error(`No converter available for '${key}' (${message[key]})`);
+                logger.error(`No converter available for '${key}' (${stringify(message[key])})`);
                 continue;
             }
 
