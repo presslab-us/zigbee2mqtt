@@ -183,6 +183,10 @@ export default class Zigbee {
         return this.herdsman.isStopping();
     }
 
+    async backup(): Promise<void> {
+        return this.herdsman.backup();
+    }
+
     async getNetworkParameters(): Promise<zh.NetworkParameters> {
         return this.herdsman.getNetworkParameters();
     }
@@ -219,7 +223,7 @@ export default class Zigbee {
         }
     }
 
-    private resolveDevice(ieeeAddr: string): Device {
+    @bind private resolveDevice(ieeeAddr: string): Device {
         if (!this.deviceLookup[ieeeAddr]) {
             const device = this.herdsman.getDeviceByIeeeAddr(ieeeAddr);
             device && (this.deviceLookup[ieeeAddr] = new Device(device));
@@ -235,7 +239,7 @@ export default class Zigbee {
     private resolveGroup(groupID: number): Group {
         const group = this.herdsman.getGroupByID(Number(groupID));
         if (group && !this.groupLookup[groupID]) {
-            this.groupLookup[groupID] = new Group(group);
+            this.groupLookup[groupID] = new Group(group, this.resolveDevice);
         }
 
         return this.groupLookup[groupID];
@@ -304,6 +308,10 @@ export default class Zigbee {
 
     async touchlinkFactoryReset(ieeeAddr: string, channel: number): Promise<boolean> {
         return this.herdsman.touchlinkFactoryReset(ieeeAddr, channel);
+    }
+
+    async addInstallCode(installCode: string): Promise<void> {
+        await this.herdsman.addInstallCode(installCode);
     }
 
     async touchlinkIdentify(ieeeAddr: string, channel: number): Promise<void> {

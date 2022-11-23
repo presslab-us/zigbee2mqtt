@@ -42,7 +42,7 @@ declare global {
     // Types
     interface MQTTResponse {data: KeyValue, status: 'error' | 'ok', error?: string, transaction?: string}
     interface MQTTOptions {qos?: mqtt.QoS, retain?: boolean, properties?: {messageExpiryInterval: number}}
-    type StateChangeReason = 'publishDebounce' | 'groupOptimistic' | 'lastSeenChanged';
+    type StateChangeReason = 'publishDebounce' | 'groupOptimistic' | 'lastSeenChanged' | 'publishCached';
     type PublishEntityState = (entity: Device | Group, payload: KeyValue,
         stateChangeReason?: StateChangeReason) => Promise<void>;
     type RecursivePartial<T> = {[P in keyof T]?: RecursivePartial<T[P]>;};
@@ -100,7 +100,7 @@ declare global {
 
         interface DefinitionExpose {
             type: string, name?: string, features?: DefinitionExposeFeature[],
-            endpoint?: string, values?: string[], value_off?: string, value_on?: string,
+            endpoint?: string, values?: string[], value_off?: string, value_on?: string, value_step?: number,
             access: number, property: string, unit?: string,
             value_min?: number, value_max?: number}
 
@@ -117,7 +117,8 @@ declare global {
             exposes: DefinitionExpose[] | ((device: zh.Device, options: KeyValue) => DefinitionExpose[])
             configure?: (device: zh.Device, coordinatorEndpoint: zh.Endpoint, logger: Logger,
                 options?: DeviceOptions) => Promise<void>;
-            onEvent?: (type: string, data: KeyValue, device: zh.Device, settings: KeyValue) => Promise<void>;
+            onEvent?: (type: string, data: KeyValue, device: zh.Device,
+                settings: KeyValue, state: KeyValue) => Promise<void>;
             ota?: {
                 isUpdateAvailable: (device: zh.Device, logger: Logger, data?: KeyValue) => Promise<boolean>;
                 updateToLatest: (device: zh.Device, logger: Logger,
@@ -279,11 +280,12 @@ declare global {
         retrieve_state?: boolean,
         debounce?: number,
         debounce_ignore?: string[],
+        filtered_attributes?: string[],
+        filtered_cache?: string[],
         filtered_optimistic?: string[],
         icon?: string,
         homeassistant?: KeyValue,
         legacy?: boolean,
-        filtered_attributes?: string[],
         friendly_name: string,
         description?: string,
         qos?: 0 | 1 | 2,
@@ -293,10 +295,12 @@ declare global {
         devices?: string[],
         ID?: number,
         optimistic?: boolean,
+        off_state?: 'all_members_off' | 'last_member_state'
+        filtered_attributes?: string[],
+        filtered_cache?: string[],
         filtered_optimistic?: string[],
         retrieve_state?: boolean,
         homeassistant?: KeyValue,
-        filtered_attributes?: string[],
         friendly_name: string,
         description?: string,
         qos?: 0 | 1 | 2,

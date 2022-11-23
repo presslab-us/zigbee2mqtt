@@ -39,17 +39,18 @@ const AllExtensions = [
 type ExtensionArgs = [Zigbee, MQTT, State, PublishEntityState, EventBus,
     (enable: boolean, name: string) => Promise<void>, () => void, (extension: Extension) => Promise<void>];
 
-class Controller {
+export class Controller {
     private eventBus: EventBus;
     private zigbee: Zigbee;
     private state: State;
     private mqtt: MQTT;
     private restartCallback: () => void;
-    private exitCallback: (code: number) => void;
+    private exitCallback: (code: number, restart: boolean) => void;
     private extensions: Extension[];
     private extensionArgs: ExtensionArgs;
 
-    constructor(restartCallback: () => void, exitCallback: (code: number) => void) {
+    constructor(restartCallback: () => void, exitCallback: (code: number, restart: boolean) => void) {
+        logger.init();
         this.eventBus = new EventBus( /* istanbul ignore next */ (error) => {
             logger.error(`Error: ${error.message}`);
             logger.debug(error.stack);
@@ -143,8 +144,7 @@ class Controller {
         try {
             await this.mqtt.connect();
         } catch (error) {
-            logger.error(`MQTT failed to connect: ${error.message}`);
-            logger.error('Exiting...');
+            logger.error(`MQTT failed to connect, exiting...`);
             await this.zigbee.stop();
             await this.exit(1);
         }
@@ -154,9 +154,9 @@ class Controller {
 
         // Send all cached states.
         if (settings.get().advanced.cache_state_send_on_startup && settings.get().advanced.cache_state) {
-            for (const device of devices) {
-                if (this.state.exists(device)) {
-                    this.publishEntityState(device, this.state.get(device));
+            for (const entity of [...devices, ...this.zigbee.groups()]) {
+                if (this.state.exists(entity)) {
+                    this.publishEntityState(entity, this.state.get(entity), 'publishCached');
                 }
             }
         }
@@ -186,7 +186,7 @@ class Controller {
         await this.callExtensions('start', [extension]);
     }
 
-    async stop(): Promise<void> {
+    async stop(restart = false): Promise<void> {
         // Call extensions
         await this.callExtensions('stop', this.extensions);
         this.eventBus.removeListeners(this);
@@ -198,16 +198,16 @@ class Controller {
         try {
             await this.zigbee.stop();
             logger.info('Stopped Zigbee2MQTT');
-            await this.exit(0);
+            await this.exit(0, restart);
         } catch (error) {
             logger.error('Failed to stop Zigbee2MQTT');
-            await this.exit(1);
+            await this.exit(1, restart);
         }
     }
 
-    async exit(code: number): Promise<void> {
+    async exit(code: number, restart = false): Promise<void> {
         await logger.end();
-        this.exitCallback(code);
+        this.exitCallback(code, restart);
     }
 
     @bind async onZigbeeAdapterDisconnected(): Promise<void> {
@@ -264,10 +264,8 @@ class Controller {
             extension.adjustMessageBeforePublish?.(entity, message);
         }
 
-        // filter mqtt message attributes
-        if (entity.options.filtered_attributes) {
-            entity.options.filtered_attributes.forEach((a) => delete message[a]);
-        }
+        // Filter mqtt message attributes
+        utils.filterProperties(entity.options.filtered_attributes, message);
 
         if (Object.entries(message).length) {
             const output = settings.get().advanced.output;

@@ -10,6 +10,9 @@ import {detailedDiff} from 'deep-object-diff';
 import Extension from './extension';
 import Device from '../model/device';
 import Group from '../model/group';
+import data from '../util/data';
+import JSZip from 'jszip';
+import fs from 'fs';
 
 const requestRegex = new RegExp(`${settings.get().mqtt.base_topic}/bridge/request/(.*)`);
 
@@ -38,8 +41,10 @@ export default class Bridge extends Extension {
             'group/rename': this.groupRename,
             'permit_join': this.permitJoin,
             'restart': this.restart,
+            'backup': this.backup,
             'touchlink/factory_reset': this.touchlinkFactoryReset,
             'touchlink/identify': this.touchlinkIdentify,
+            'install_code/add': this.installCodeAdd,
             'touchlink/scan': this.touchlinkScan,
             'health_check': this.healthCheck,
             'options': this.bridgeOptions,
@@ -231,6 +236,28 @@ export default class Bridge extends Extension {
         setTimeout(this.restartCallback, 500);
         logger.info('Restarting Zigbee2MQTT');
         return utils.getResponse(message, {}, null);
+    }
+
+    @bind async backup(message: string | KeyValue): Promise<MQTTResponse> {
+        await this.zigbee.backup();
+        const dataPath = data.getPath();
+        const files = utils.getAllFiles(dataPath).map((f) => [f, f.substring(dataPath.length + 1)])
+            .filter((f) => !f[1].startsWith('log'));
+        const zip = new JSZip();
+        files.forEach((f) => zip.file(f[1], fs.readFileSync(f[0])));
+        const base64Zip = await zip.generateAsync({type: 'base64'});
+        return utils.getResponse(message, {zip: base64Zip}, null);
+    }
+
+    @bind async installCodeAdd(message: KeyValue | string): Promise<MQTTResponse> {
+        if (typeof message === 'object' && !message.hasOwnProperty('value')) {
+            throw new Error('Invalid payload');
+        }
+
+        const value = typeof message === 'object' ? message.value : message;
+        await this.zigbee.addInstallCode(value);
+        logger.info('Successfully added new install code');
+        return utils.getResponse(message, {value}, null);
     }
 
     @bind async permitJoin(message: KeyValue | string): Promise<MQTTResponse> {

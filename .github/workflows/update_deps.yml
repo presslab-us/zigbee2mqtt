@@ -4,21 +4,26 @@ on:
   schedule:
   - cron: "0 0 * * 0"
 
+permissions:
+  contents: read
+
 jobs:
   update_deps:
+    permissions:
+      contents: write  # for peter-evans/create-pull-request to create branch
+      pull-requests: write  # for peter-evans/create-pull-request to create a PR
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       with:
         ref: dev
         ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
-    - uses: actions/setup-node@v2-beta
+    - uses: actions/setup-node@v3
       with:
-        node-version: 14
-    - run: rm -rf npm-shrinkwrap.json
-    - run: npx npm-check-updates -u
-    - run: npm install && npm shrinkwrap --dev
-    - uses: peter-evans/create-pull-request@v3
+        node-version: 16
+    - run: npx npm-check-updates -u -x connect-gzip-static # connect-gzip-static only supports node 16
+    - run: npm install
+    - uses: peter-evans/create-pull-request@v4
       with:
         commit-message: Update dependencies
         branch: "update_deps"

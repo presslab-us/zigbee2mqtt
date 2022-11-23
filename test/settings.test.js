@@ -39,6 +39,7 @@ describe('Settings', () => {
 
     beforeEach(() => {
         remove(configurationFile);
+        remove(secretFile);
         remove(devicesFile);
         remove(groupsFile);
         clearEnvironmentVariables();
@@ -66,20 +67,42 @@ describe('Settings', () => {
     it('Should apply environment variables', () => {
         process.env['ZIGBEE2MQTT_CONFIG_SERIAL_DISABLE_LED'] = 'true';
         process.env['ZIGBEE2MQTT_CONFIG_ADVANCED_SOFT_RESET_TIMEOUT'] = 1;
-        process.env['ZIGBEE2MQTT_CONFIG_ADVANCED_OUTPUT'] = 'csvtest';
+        process.env['ZIGBEE2MQTT_CONFIG_ADVANCED_OUTPUT'] = 'attribute_and_json';
+        process.env['ZIGBEE2MQTT_CONFIG_ADVANCED_LOG_OUTPUT'] = '["console"]';
         process.env['ZIGBEE2MQTT_CONFIG_MAP_OPTIONS_GRAPHVIZ_COLORS_FILL'] = '{"enddevice": "#ff0000", "coordinator": "#00ff00", "router": "#0000ff"}';
         process.env['ZIGBEE2MQTT_CONFIG_MQTT_BASE_TOPIC'] = 'testtopic';
+        process.env['ZIGBEE2MQTT_CONFIG_MQTT_SERVER'] = 'testserver';
+        process.env['ZIGBEE2MQTT_CONFIG_ADVANCED_NETWORK_KEY'] = 'GENERATE';
+        process.env['ZIGBEE2MQTT_CONFIG_DEVICES'] = 'devices.yaml';
+
+        const contentDevices = {
+            '0x00158d00018255df': {
+                friendly_name: '0x00158d00018255df',
+                retain: false,
+            },
+        };
 
         write(configurationFile, {});
+        write(devicesFile, contentDevices);
+        expect(settings.validate()).toStrictEqual([]);
+
         const s = settings.get();
         const expected = objectAssignDeep.noMutate({}, settings.testing.defaults);
-        expected.devices = {};
+        expected.devices = {
+            '0x00158d00018255df': {
+                friendly_name: '0x00158d00018255df',
+                retain: false,
+            },
+        };
         expected.groups = {};
         expected.serial.disable_led = true;
         expected.advanced.soft_reset_timeout = 1;
-        expected.advanced.output = 'csvtest';
+        expected.advanced.log_output = ["console"];
+        expected.advanced.output = 'attribute_and_json';
         expected.map_options.graphviz.colors.fill = {enddevice: '#ff0000', coordinator: '#00ff00', router: '#0000ff'};
         expected.mqtt.base_topic = 'testtopic';
+        expected.mqtt.server = 'testserver';
+        expected.advanced.network_key = 'GENERATE';
 
         expect(s).toStrictEqual(expected);
     });
@@ -169,6 +192,49 @@ describe('Settings', () => {
         settings.set(['advanced', 'network_key'], [1,2,3, 4]);
         expect(read(configurationFile)).toStrictEqual(contentConfiguration);
         expect(read(secretFile)).toStrictEqual({...contentSecret, username: 'test123', network_key: [1,2,3,4]});
+    });
+
+    it('Should read ALL secrets form a separate file', () => {
+        const contentConfiguration = {
+            mqtt: {
+                server: '!secret server',
+                user: '!secret username',
+                password: '!secret password',
+            },
+            advanced: {
+                network_key: '!secret network_key',
+            }
+        };
+
+        const contentSecret = {
+            server: 'my.mqtt.server',
+            username: 'mysecretusername',
+            password: 'mysecretpassword',
+            network_key: [1,2,3],
+        };
+
+        write(secretFile, contentSecret, false);
+        write(configurationFile, contentConfiguration);
+
+        const expected = {
+            base_topic: 'zigbee2mqtt',
+            include_device_information: false,
+            force_disable_retain: false,
+            password: "mysecretpassword",
+            server: "my.mqtt.server",
+            user: "mysecretusername",
+        };
+
+        expect(settings.get().mqtt).toStrictEqual(expected);
+        expect(settings.get().advanced.network_key).toStrictEqual([1,2,3]);
+
+        settings.testing.write();
+        expect(read(configurationFile)).toStrictEqual(contentConfiguration);
+        expect(read(secretFile)).toStrictEqual(contentSecret);
+
+        settings.set(['mqtt', 'server'], 'not.secret.server');
+        expect(read(configurationFile)).toStrictEqual(contentConfiguration);
+        expect(read(secretFile)).toStrictEqual({...contentSecret, server: 'not.secret.server'});
     });
 
     it('Should read devices form a separate file', () => {
@@ -747,15 +813,15 @@ describe('Settings', () => {
         expect(settings.validate()).toEqual(expect.arrayContaining([error]));
     });
 
-    it('Configuration friendly name cannot contain null char', async () => {
+    it('Configuration friendly name cannot contain control char', async () => {
         write(configurationFile, {
             ...minimalConfig,
-            devices: {'0x0017880104e45519': {friendly_name: 'blaa/blaa' + String.fromCharCode(0), retain: false}},
+            devices: {'0x0017880104e45519': {friendly_name: 'blaa/blaa\u009f', retain: false}},
         });
 
         settings.reRead();
 
-        const error = `friendly_name is not allowed to contain null char`;
+        const error = `friendly_name is not allowed to contain control char`;
         expect(settings.validate()).toEqual(expect.arrayContaining([error]));
     });
 

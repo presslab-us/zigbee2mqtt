@@ -38,7 +38,7 @@ const endpointNames = [
     'button_11', 'button_12', 'button_13', 'button_14', 'button_15',
     'button_16', 'button_17', 'button_18', 'button_19', 'button_20',
     'button_light', 'button_fan_high', 'button_fan_med', 'button_fan_low',
-    'heat', 'cool', 'water', 'meter', 'wifi',
+    'heat', 'cool', 'water', 'meter', 'wifi', 'no_occupancy_since',
 ];
 
 function capitalize(s: string): string {
@@ -77,7 +77,7 @@ async function getZigbee2MQTTVersion(includeCommitHash=true): Promise<{commitHas
 }
 
 async function getDependencyVersion(depend: string): Promise<{version: string}> {
-    const packageJSON = await import(path.join(__dirname, '..', '..', 'node_modules', depend, 'package.json'));
+    const packageJSON = await import(path.join(require.resolve(depend), '..', '..', 'package.json'));
     const version = packageJSON.version;
     return {version};
 }
@@ -210,6 +210,43 @@ function toSnakeCase(value: string | KeyValue): any {
     }
 }
 
+function charRange(start: string, stop: string): number[] {
+    const result = [];
+    for (let idx=start.charCodeAt(0), end=stop.charCodeAt(0); idx <=end; ++idx) {
+        result.push(idx);
+    }
+    return result;
+}
+
+const controlCharacters = [
+    ...charRange('\u0000', '\u001F'),
+    ...charRange('\u007f', '\u009F'),
+    ...charRange('\ufdd0', '\ufdef'),
+];
+
+function containsControlCharacter(str: string): boolean {
+    for (let i = 0; i < str.length; i++) {
+        const ch = str.charCodeAt(i);
+        if (controlCharacters.includes(ch) || [0xFFFE, 0xFFFF].includes(ch & 0xFFFF)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function getAllFiles(path_: string): string[] {
+    const result = [];
+    for (let item of fs.readdirSync(path_)) {
+        item = path.join(path_, item);
+        if (fs.lstatSync(item).isFile()) {
+            result.push(item);
+        } else {
+            result.push(...getAllFiles(item));
+        }
+    }
+    return result;
+}
+
 function validateFriendlyName(name: string, throwFirstError=false): string[] {
     const errors = [];
     for (const endpointName of endpointNames) {
@@ -220,7 +257,7 @@ function validateFriendlyName(name: string, throwFirstError=false): string[] {
 
     if (name.length === 0) errors.push(`friendly_name must be at least 1 char long`);
     if (name.endsWith('/') || name.startsWith('/')) errors.push(`friendly_name is not allowed to end or start with /`);
-    if (name.endsWith(String.fromCharCode(0))) errors.push(`friendly_name is not allowed to contain null char`);
+    if (containsControlCharacter(name)) errors.push(`friendly_name is not allowed to contain control char`);
     if (endpointNames.includes(name)) errors.push(`Following friendly_name are not allowed: '${endpointNames}'`);
     if (name.match(/.*\/\d*$/)) errors.push(`Friendly name cannot end with a "/DIGIT" ('${name}')`);
     if (name.includes('#') || name.includes('+')) {
@@ -245,9 +282,13 @@ function sanitizeImageParameter(parameter: string): string {
     return sanitized;
 }
 
-function isAvailabilityEnabledForDevice(device: Device, settings: Settings): boolean {
-    if (device.options.hasOwnProperty('availability')) {
-        return !!device.options.availability;
+function isAvailabilityEnabledForEntity(entity: Device | Group, settings: Settings): boolean {
+    if (entity.isGroup()) {
+        return !entity.membersDevices().map((d) => isAvailabilityEnabledForEntity(d, settings)).includes(false);
+    }
+
+    if (entity.options.hasOwnProperty('availability')) {
+        return !!entity.options.availability;
     }
 
     // availability_timeout = deprecated
@@ -256,11 +297,11 @@ function isAvailabilityEnabledForDevice(device: Device, settings: Settings): boo
 
     const passlist = settings.advanced.availability_passlist.concat(settings.advanced.availability_whitelist);
     if (passlist.length > 0) {
-        return passlist.includes(device.name) || passlist.includes(device.ieeeAddr);
+        return passlist.includes(entity.name) || passlist.includes(entity.ieeeAddr);
     }
 
     const blocklist = settings.advanced.availability_blacklist.concat(settings.advanced.availability_blocklist);
-    return !blocklist.includes(device.name) && !blocklist.includes(device.ieeeAddr);
+    return !blocklist.includes(entity.name) && !blocklist.includes(entity.ieeeAddr);
 }
 
 const entityIDRegex = new RegExp(`^(.+?)(?:/(${endpointNames.join('|')}|\\d+))?$`);
@@ -271,6 +312,14 @@ function parseEntityID(ID: string): {ID: string, endpoint: string} {
 
 function isEndpoint(obj: unknown): obj is zh.Endpoint {
     return obj.constructor.name.toLowerCase() === 'endpoint';
+}
+
+function flatten<Type>(arr: Type[][]): Type[] {
+    return [].concat(...arr);
+}
+
+function arrayUnique<Type>(arr: Type[]): Type[] {
+    return [...new Set(arr)];
 }
 
 function isZHGroup(obj: unknown): obj is zh.Group {
@@ -300,11 +349,21 @@ function publishLastSeen(data: eventdata.LastSeenChanged, settings: Settings, al
     }
 }
 
+function filterProperties(filter: string[], data: KeyValue): void {
+    if (filter) {
+        for (const property of Object.keys(data)) {
+            if (filter.find((p) => property.match(`^${p}$`))) {
+                delete data[property];
+            }
+        }
+    }
+}
 
 export default {
     endpointNames, capitalize, getZigbee2MQTTVersion, getDependencyVersion, formatDate, objectHasProperties,
     equalsPartial, getObjectProperty, getResponse, parseJSON, loadModuleFromText, loadModuleFromFile,
     getExternalConvertersDefinitions, removeNullPropertiesFromObject, toNetworkAddressHex, toSnakeCase,
     parseEntityID, isEndpoint, isZHGroup, hours, minutes, seconds, validateFriendlyName, sleep,
-    sanitizeImageParameter, isAvailabilityEnabledForDevice, publishLastSeen, availabilityPayload,
+    sanitizeImageParameter, isAvailabilityEnabledForEntity, publishLastSeen, availabilityPayload,
+    getAllFiles, filterProperties, flatten, arrayUnique,
 };

@@ -13,7 +13,8 @@ const legacyApi = settings.get().advanced.legacy_api;
 const legacyTopicRegex = new RegExp(`^${settings.get().mqtt.base_topic}/bridge/(bind|unbind)/.+$`);
 const topicRegex = new RegExp(`^${settings.get().mqtt.base_topic}/bridge/request/device/(bind|unbind)`);
 const clusterCandidates = ['genScenes', 'genOnOff', 'genLevelCtrl', 'lightingColorCtrl', 'closuresWindowCovering',
-    'hvacThermostat', 'msTemperatureMeasurement', 'closuresDoorLock'];
+    'hvacThermostat', 'msIlluminanceMeasurement', 'msTemperatureMeasurement', 'msRelativeHumidity',
+    'msSoilMoisture', 'msCO2', 'closuresDoorLock'];
 
 // See zigbee-herdsman-converters
 const defaultBindGroup = {type: 'group_number', ID: 901, name: 'default_bind_group'};
@@ -469,7 +470,12 @@ export default class Bind extends Extension {
                     const key = `${endpoint.getDevice().ieeeAddr}_${endpoint.ID}_${pollOnMessage.indexOf(poll)}`;
                     if (!this.pollDebouncers[key]) {
                         this.pollDebouncers[key] = debounce(async () => {
-                            await endpoint.read(poll.read.cluster, readAttrs);
+                            try {
+                                await endpoint.read(poll.read.cluster, readAttrs);
+                            } catch (error) {
+                                logger.error(`Failed to poll ${readAttrs} from ` +
+                                    `${this.zigbee.resolveEntity(endpoint.getDevice()).name}`);
+                            }
                         }, 1000);
                     }
 

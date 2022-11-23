@@ -65,24 +65,25 @@ export default class OTAUpdate extends Extension {
     }
 
     private removeProgressAndRemainingFromState(device: Device): void {
-        delete this.state.get(device)?.update?.progress;
-        delete this.state.get(device)?.update?.remaining;
+        delete this.state.get(device).update?.progress;
+        delete this.state.get(device).update?.remaining;
     }
 
     @bind private async onZigbeeEvent(data: eventdata.DeviceMessage): Promise<void> {
-        if (settings.get().ota.disable_automatic_update_check) return;
-        if (data.type !== 'commandQueryNextImageRequest' || !data.device.definition) return;
+        if (data.type !== 'commandQueryNextImageRequest' || !data.device.definition ||
+            this.inProgress.has(data.device.ieeeAddr)) return;
         logger.debug(`Device '${data.device.name}' requested OTA`);
 
+        const automaticOTACheckDisabled = settings.get().ota.disable_automatic_update_check;
         let supportsOTA = data.device.definition.hasOwnProperty('ota');
-        if (supportsOTA) {
+        if (supportsOTA && !automaticOTACheckDisabled) {
             // When a device does a next image request, it will usually do it a few times after each other
             // with only 10 - 60 seconds inbetween. It doesn't make sense to check for a new update
             // each time, so this interval can be set by the user. The default is 1,440 minutes (one day).
             const updateCheckInterval = settings.get().ota.update_check_interval * 1000 * 60;
             const check = this.lastChecked.hasOwnProperty(data.device.ieeeAddr) ?
                 (Date.now() - this.lastChecked[data.device.ieeeAddr]) > updateCheckInterval : true;
-            if (!check || this.inProgress.has(data.device.ieeeAddr)) return;
+            if (!check) return;
 
             this.lastChecked[data.device.ieeeAddr] = Date.now();
             let available = false;
@@ -111,13 +112,11 @@ export default class OTAUpdate extends Extension {
             }
         }
 
-        // Respond to the OTA request:
-        // - In case we don't support OTA: respond with NO_IMAGE_AVAILABLE (0x98) (so the client stops requesting OTAs)
-        // - In case we do support OTA: respond with ABORT (0x95) as we don't want to update now.
+        // Respond to the OTA request: respond with NO_IMAGE_AVAILABLE (0x98) (so the client stops requesting OTAs)
         const endpoint = data.device.zh.endpoints.find((e) => e.supportsOutputCluster('genOta'));
         if (endpoint) {
             // Some devices send OTA requests without defining OTA cluster as input cluster.
-            await endpoint.commandResponse('genOta', 'queryNextImageResponse', {status: supportsOTA ? 0x95 : 0x98});
+            await endpoint.commandResponse('genOta', 'queryNextImageResponse', {status: 0x98});
         }
     }
 

@@ -2,8 +2,8 @@ require('core-js/features/object/from-entries');
 require('core-js/features/array/flat');
 const semver = require('semver');
 const engines = require('./package.json').engines;
-const indexJsRestart = 'indexjs.restart';
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const {exec} = require('child_process');
 const rimraf = require('rimraf');
@@ -15,12 +15,12 @@ let stopping = false;
 const hashFile = path.join(__dirname, 'dist', '.hash');
 
 async function restart() {
-    await stop(indexJsRestart);
+    await stop(true);
     await start();
 }
 
-async function exit(code, reason) {
-    if (reason !== indexJsRestart) {
+async function exit(code, restart) {
+    if (!restart) {
         process.exit(code);
     }
 }
@@ -44,7 +44,15 @@ async function build(reason) {
     return new Promise((resolve, reject) => {
         process.stdout.write(`Building Zigbee2MQTT... (${reason})`);
         rimraf.sync('dist');
-        exec('npm run build', {cwd: __dirname}, async (err, stdout, stderr) => {
+        const env = {...process.env};
+        const _600mb = 629145600;
+        if (_600mb > os.totalmem() && !env.NODE_OPTIONS) {
+            // Prevent OOM on tsc compile for system with low memory
+            // https://github.com/Koenkk/zigbee2mqtt/issues/12034
+            env.NODE_OPTIONS = '--max_old_space_size=256';
+        }
+
+        exec('npm run build', {env, cwd: __dirname}, async (err, stdout, stderr) => {
             if (err) {
                 process.stdout.write(', failed\n');
                 if (err.code === 134) {
@@ -101,21 +109,27 @@ async function start() {
     await controller.start();
 }
 
-async function stop(reason=null) {
-    await controller.stop(reason);
+async function stop(restart) {
+    await controller.stop(restart);
 }
 
 async function handleQuit() {
     if (!stopping && controller) {
         stopping = true;
-        await stop();
+        await stop(false);
     }
 }
 
-if (process.argv.length === 3 && process.argv[2] === 'writehash') {
-    writeHash();
+if (require.main === module) {
+    if (process.argv.length === 3 && process.argv[2] === 'writehash') {
+        writeHash();
+    } else {
+        process.on('SIGINT', handleQuit);
+        process.on('SIGTERM', handleQuit);
+        start();
+    }    
 } else {
     process.on('SIGINT', handleQuit);
     process.on('SIGTERM', handleQuit);
-    start();
+    module.exports = { start };
 }

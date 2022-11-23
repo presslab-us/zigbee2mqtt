@@ -193,11 +193,17 @@ devices:
     friendly_name: '0x00158d000708b49d'
   '0x00124b0022d5c852':
     friendly_name: '0x00124b0022d5c852'
-  '0x000d6f000e875a0e':
-    friendly_name: '0x000d6f000e875a0e'
   '0x000d6f0010c9a75e':
     friendly_name: '0x000d6f0010c9a75e'
   '0x500b914000016669':
     friendly_name: '0x500b914000016669'
     thermostat_unit: celsius
     legacy: false
+  '0x000d6f000fed596b':
+    friendly_name: '0x000d6f000fed596b'
+  '0x000d6f000fece8a4':
+    friendly_name: '0x000d6f000fece8a4'
+  '0x000d6f000e875a0e':
+    friendly_name: '0x000d6f000e875a0e'
+  '0x0022a30000337af1':
+    friendly_name: '0x0022a30000337af1'

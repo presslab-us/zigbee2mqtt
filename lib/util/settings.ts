@@ -196,6 +196,7 @@ function write(): void {
 
     // In case the setting is defined in a separte file (e.g. !secret network_key) update it there.
     for (const path of [
+        ['mqtt', 'server'],
         ['mqtt', 'user'],
         ['mqtt', 'password'],
         ['advanced', 'network_key'],
@@ -308,6 +309,7 @@ export function validate(): string[] {
 
 function read(): Settings {
     const s = yaml.read(file) as Settings;
+    applyEnvironmentVariables(s);
 
     // Read !secret MQTT username and password if set
     // eslint-disable-next-line
@@ -323,9 +325,16 @@ function read(): Settings {
         }
     };
 
-    if (s.mqtt?.user && s.mqtt?.password) {
+    if (s.mqtt?.user) {
         s.mqtt.user = interpetValue(s.mqtt.user);
+    }
+
+    if (s.mqtt?.password) {
         s.mqtt.password = interpetValue(s.mqtt.password);
+    }
+
+    if (s.mqtt?.server) {
+        s.mqtt.server = interpetValue(s.mqtt.server);
     }
 
     if (s.advanced?.network_key) {
@@ -373,7 +382,11 @@ function applyEnvironmentVariables(settings: Partial<Settings>): void {
                         }, settings);
 
                         if (type.indexOf('object') >= 0 || type.indexOf('array') >= 0) {
-                            setting[key] = JSON.parse(process.env[envVariableName]);
+                            try {
+                                setting[key] = JSON.parse(process.env[envVariableName]);
+                            } catch (error) {
+                                setting[key] = process.env[envVariableName];
+                            }
                         } else if (type.indexOf('number') >= 0) {
                             /* eslint-disable-line */ // @ts-ignore
                             setting[key] = process.env[envVariableName] * 1;
@@ -390,7 +403,7 @@ function applyEnvironmentVariables(settings: Partial<Settings>): void {
 
                 if (typeof obj[key] === 'object' && obj[key]) {
                     const newPath = [...path];
-                    if (key !== 'properties') {
+                    if (key !== 'properties' && key !== 'oneOf' && !Number.isInteger(Number(key))) {
                         newPath.push(key);
                     }
                     iterate(obj[key], newPath);
@@ -404,7 +417,6 @@ function applyEnvironmentVariables(settings: Partial<Settings>): void {
 function getInternalSettings(): Partial<Settings> {
     if (!_settings) {
         _settings = read();
-        applyEnvironmentVariables(_settings);
     }
 
     return _settings;
