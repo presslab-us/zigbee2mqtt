@@ -1,4 +1,5 @@
-homeassistant: true
+homeassistant:
+  legacy_entity_attributes: false
 permit_join: false
 frontend:
   port: 80
@@ -44,6 +45,18 @@ advanced:
   availability_blacklist: []
   report: true
   homeassistant_legacy_triggers: false
+  log_syslog:
+    app_name: Zigbee2MQTT
+    eol: /n
+    host: localhost
+    localhost: localhost
+    path: /dev/log
+    pid: process.pid
+    port: 123
+    protocol: tcp4
+    type: '5424'
+  legacy_api: false
+  legacy_availability_payload: false
 groups:
   '1':
     friendly_name: kitchen_lights
@@ -207,3 +220,8 @@ devices:
     friendly_name: '0x000d6f000e875a0e'
   '0x0022a30000337af1':
     friendly_name: '0x0022a30000337af1'
+availability:
+  active:
+    timeout: 10
+  passive:
+    timeout: 1500
