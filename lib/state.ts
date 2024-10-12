@@ -1,26 +1,47 @@
-import logger from './util/logger';
+import fs from 'fs';
+
+import objectAssignDeep from 'object-assign-deep';
+
 import data from './util/data';
+import logger from './util/logger';
 import * as settings from './util/settings';
 import utils from './util/utils';
-import fs from 'fs';
-import objectAssignDeep from 'object-assign-deep';
 
 const saveInterval = 1000 * 60 * 5; // 5 minutes
 
 const dontCacheProperties = [
-    'action', 'action_.*', 'button', 'button_left', 'button_right', 'click', 'forgotten', 'keyerror',
-    'step_size', 'transition_time', 'group_list', 'group_capacity', 'no_occupancy_since',
-    'step_mode', 'transition_time', 'duration', 'elapsed', 'from_side', 'to_side',
+    'action',
+    'action_.*',
+    'button',
+    'button_left',
+    'button_right',
+    'click',
+    'forgotten',
+    'keyerror',
+    'step_size',
+    'transition_time',
+    'group_list',
+    'group_capacity',
+    'no_occupancy_since',
+    'step_mode',
+    'transition_time',
+    'duration',
+    'elapsed',
+    'from_side',
+    'to_side',
 ];
 
 class State {
     private state: {[s: string | number]: KeyValue} = {};
     private file = data.joinPath('state.json');
-    private timer: NodeJS.Timer = null;
-    private eventBus: EventBus;
+    private timer?: NodeJS.Timeout;
 
-    constructor(eventBus: EventBus) {
+    constructor(
+        private readonly eventBus: EventBus,
+        private readonly zigbee: Zigbee,
+    ) {
         this.eventBus = eventBus;
+        this.zigbee = zigbee;
     }
 
     start(): void {
@@ -28,11 +49,14 @@ class State {
 
         // Save the state on every interval
         this.timer = setInterval(() => this.save(), saveInterval);
-        this.eventBus.onDeviceLeave(this, (data) => delete this.state[data.ieeeAddr]);
     }
 
     stop(): void {
-        this.eventBus.removeListeners(this);
+        // Remove any invalid states (ie when the device has left the network) when the system is stopped
+        Object.keys(this.state)
+            .filter((k) => typeof k === 'string' && !this.zigbee.resolveEntity(k)) // string key = ieeeAddr
+            .forEach((k) => delete this.state[k]);
+
         clearTimeout(this.timer);
         this.save();
     }
@@ -42,8 +66,8 @@ class State {
             try {
                 this.state = JSON.parse(fs.readFileSync(this.file, 'utf8'));
                 logger.debug(`Loaded state from file ${this.file}`);
-            } catch (e) {
-                logger.debug(`Failed to load state from file ${this.file} (corrupt file?)`);
+            } catch (error) {
+                logger.debug(`Failed to load state from file ${this.file} (corrupt file?) (${(error as Error).message})`);
             }
         } else {
             logger.debug(`Can't load state from file ${this.file} (doesn't exist)`);
@@ -56,8 +80,8 @@ class State {
             const json = JSON.stringify(this.state, null, 4);
             try {
                 fs.writeFileSync(this.file, json, 'utf8');
-            } catch (e) {
-                logger.error(`Failed to write state to '${this.file}' (${e.message})`);
+            } catch (error) {
+                logger.error(`Failed to write state to '${this.file}' (${error})`);
             }
         } else {
             logger.debug(`Not saving state`);
@@ -65,14 +89,14 @@ class State {
     }
 
     exists(entity: Device | Group): boolean {
-        return this.state.hasOwnProperty(entity.ID);
+        return this.state[entity.ID] !== undefined;
     }
 
     get(entity: Group | Device): KeyValue {
         return this.state[entity.ID] || {};
     }
 
-    set(entity: Group | Device, update: KeyValue, reason: string=null): KeyValue {
+    set(entity: Group | Device, update: KeyValue, reason?: string): KeyValue {
         const fromState = this.state[entity.ID] || {};
         const toState = objectAssignDeep({}, fromState, update);
         const newCache = {...toState};

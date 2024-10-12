@@ -11,7 +11,8 @@ mqtt:
   user: zigbee
   password: bumble
 serial:
-  port: /dev/ttyACM0
+#  port: /dev/ttyACM0
+  port: tcp://hmg-01.lan:6638
 advanced:
   pan_id: 43241
   ext_pan_id:
@@ -220,6 +221,10 @@ devices:
     friendly_name: '0x000d6f000e875a0e'
   '0x0022a30000337af1':
     friendly_name: '0x0022a30000337af1'
+  '0x0022a30000343cb0':
+    friendly_name: '0x0022a30000343cb0'
+  '0x00124b000765b6a9':
+    friendly_name: '0x00124b000765b6a9'
 availability:
   active:
     timeout: 10
