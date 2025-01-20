@@ -1,16 +1,22 @@
-const exposes = require('zigbee-herdsman-converters/lib/exposes');
-const fz = {...require('zigbee-herdsman-converters/converters/fromZigbee'), legacy: require('zigbee-herdsman-converters/lib/legacy').fromZigbee};
+const {lock, light, action, thermostat, temperature} = require('zigbee-herdsman-converters/lib/modernExtend');
+// Add the lines below
+const fz = require('zigbee-herdsman-converters/converters/fromZigbee');
 const tz = require('zigbee-herdsman-converters/converters/toZigbee');
-const extend = require('zigbee-herdsman-converters/lib/extend');
+const exposes = require('zigbee-herdsman-converters/lib/exposes');
 const reporting = require('zigbee-herdsman-converters/lib/reporting');
+const ota = require('zigbee-herdsman-converters/lib/ota');
+const utils = require('zigbee-herdsman-converters/lib/utils');
+const globalStore = require('zigbee-herdsman-converters/lib/store');
 const e = exposes.presets;
+const ea = exposes.access;
 
-module.exports = [
+const definition = [
     {
         zigbeeModel: ['PL-GDO1         '],
         model: 'PL-GDO1',
         vendor: 'Presslab',
         description: 'Presslab garage door controller',
+        extend: [],
         supports: 'lock/unlock',
         fromZigbee: [fz.lock],
         toZigbee: [tz.lock],
@@ -29,6 +35,7 @@ module.exports = [
         model: 'PL-HL',
         vendor: 'Presslab',
         description: 'Presslab homelink bridge',
+        extend: [],
         supports: 'action, temperature',
         fromZigbee: [fz.command_toggle, fz.temperature],
         toZigbee: [],
@@ -48,13 +55,14 @@ module.exports = [
         model: 'PL-LDSK',
         vendor: 'Presslab',
         description: 'Presslab desk lamp',
-        extend: extend.light_onoff_brightness(),
+        extend: [ light() ],
     },
     {
         zigbeeModel: ['PL-OS1'],
         model: 'PL-OS1',
         vendor: 'Presslab',
         description: 'Presslab overswitch single',
+        extend: [],
         configure: async (device, coordinatorEndpoint) => {
             const binds = [
                 'genOnOff', 'genLevelCtrl', 'genPowerCfg', 'msIlluminanceMeasurement', 'msTemperatureMeasurement',
@@ -82,6 +90,7 @@ module.exports = [
         model: 'PL-OS2',
         vendor: 'Presslab',
         description: 'Presslab overswitch double',
+        extend: [],
         configure: async (device, coordinatorEndpoint) => {
             const binds = [
                 'genOnOff', 'genLevelCtrl', 'genPowerCfg', 'msIlluminanceMeasurement', 'msTemperatureMeasurement',
@@ -111,6 +120,7 @@ module.exports = [
         model: 'PL-OS3',
         vendor: 'Presslab',
         description: 'Presslab overswitch triple',
+        extend: [],
         configure: async (device, coordinatorEndpoint) => {
             const binds = [
                 'genOnOff', 'genLevelCtrl', 'genPowerCfg', 'msIlluminanceMeasurement', 'msTemperatureMeasurement',
@@ -137,11 +147,11 @@ module.exports = [
             e.battery(), e.temperature(), e.illuminance()
         ],
     },
-    {
-        zigbeeModel: ['PL-GERMFILTER'],
+/*    {        zigbeeModel: ['PL-GERMFILTER'],
         model: 'PL-GERMFILTER',
         vendor: 'Presslab',
         description: 'Presslab Germguardian filter',
+        extend: [],
         supports: 'fan, on/off',
         fromZigbee: [fz.fan, fz.PL_GERMFILTER_on_off],
         toZigbee: [
@@ -154,13 +164,14 @@ module.exports = [
         },
         exposes: [e.fan().withModes(['off', 'low', 'medium', 'high', 'on']), e.switch()],
     },
-    {
+*/    {
         zigbeeModel: ['PL-THMIDEA'],
         model: 'PL-THMIDEA',
         vendor: 'Presslab',
         description: 'Presslab Midea thermostat interface',
+        extend: [],
         supports: 'temperature, heating/cooling system control, fan',
-        fromZigbee: [fz.legacy.thermostat_att_report, fz.fan],
+        fromZigbee: [fz.thermostat, fz.fan],
         toZigbee: [
             tz.thermostat_occupied_heating_setpoint, tz.thermostat_occupied_cooling_setpoint, tz.thermostat_setpoint_raise_lower,
             tz.thermostat_control_sequence_of_operation, tz.thermostat_system_mode, tz.fan_mode,
@@ -178,3 +189,5 @@ module.exports = [
                 .withLocalTemperatureCalibration().withPiHeatingDemand()],
     },
 ];
+
+module.exports = definition;

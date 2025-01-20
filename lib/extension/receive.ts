@@ -1,8 +1,9 @@
-import assert from 'assert';
+import assert from 'node:assert';
 
 import bind from 'bind-decorator';
 import debounce from 'debounce';
 import stringify from 'json-stable-stringify-without-jsonify';
+import throttle from 'throttleit';
 
 import * as zhc from 'zigbee-herdsman-converters';
 
@@ -16,8 +17,9 @@ type DebounceFunction = (() => void) & {clear(): void} & {flush(): void};
 export default class Receive extends Extension {
     private elapsed: {[s: string]: number} = {};
     private debouncers: {[s: string]: {payload: KeyValue; publish: DebounceFunction}} = {};
+    private throttlers: {[s: string]: {publish: PublishEntityState}} = {};
 
-    async start(): Promise<void> {
+    override async start(): Promise<void> {
         this.eventBus.onPublishEntityState(this, this.onPublishEntityState);
         this.eventBus.onDeviceMessage(this, this.onDeviceMessage);
     }
@@ -68,6 +70,20 @@ export default class Receive extends Extension {
         this.debouncers[device.ieeeAddr].publish();
     }
 
+    async publishThrottle(device: Device, payload: KeyValue, time: number): Promise<void> {
+        if (!this.throttlers[device.ieeeAddr]) {
+            this.throttlers[device.ieeeAddr] = {
+                publish: throttle(this.publishEntityState, time * 1000),
+            };
+        }
+
+        // Update state cache right away. This makes sure that during throttling cached state is always up to date.
+        // By updating cache we make sure that state cache is always up-to-date.
+        this.state.set(device, payload);
+
+        await this.throttlers[device.ieeeAddr].publish(device, payload, 'publishThrottle');
+    }
+
     // if debounce_ignore are specified (Array of strings)
     // then all newPayload values with key present in debounce_ignore
     // should equal or be undefined in oldPayload
@@ -86,7 +102,7 @@ export default class Receive extends Extension {
     }
 
     @bind async onDeviceMessage(data: eventdata.DeviceMessage): Promise<void> {
-        /* istanbul ignore next */
+        /* v8 ignore next */
         if (!data.device) return;
 
         if (!data.device.definition || data.device.zh.interviewing) {
@@ -130,20 +146,22 @@ export default class Receive extends Extension {
                 this.elapsed[data.device.ieeeAddr] = now;
             }
 
-            // Check if we have to debounce
+            // Check if we have to debounce or throttle
             if (data.device.options.debounce) {
                 this.publishDebounce(data.device, payload, data.device.options.debounce, data.device.options.debounce_ignore);
+            } else if (data.device.options.throttle) {
+                await this.publishThrottle(data.device, payload, data.device.options.throttle);
             } else {
                 await this.publishEntityState(data.device, payload);
             }
         };
 
-        const deviceExposesChanged = (): void => {
-            this.eventBus.emitDevicesChanged();
-            this.eventBus.emitExposesChanged({device: data.device});
+        const meta = {
+            device: data.device.zh,
+            logger,
+            state: this.state.get(data.device),
+            deviceExposesChanged: (): void => this.eventBus.emitExposesAndDevicesChanged(data.device),
         };
-
-        const meta = {device: data.device.zh, logger, state: this.state.get(data.device), deviceExposesChanged: deviceExposesChanged};
         let payload: KeyValue = {};
         for (const converter of converters) {
             try {
@@ -153,10 +171,12 @@ export default class Receive extends Extension {
                 if (converted) {
                     payload = {...payload, ...converted};
                 }
-            } catch (error) /* istanbul ignore next */ {
+                /* v8 ignore start */
+            } catch (error) {
                 logger.error(`Exception while calling fromZigbee converter: ${(error as Error).message}}`);
                 logger.debug((error as Error).stack!);
             }
+            /* v8 ignore stop */
         }
 
         if (!utils.objectIsEmpty(payload)) {

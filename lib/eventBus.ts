@@ -1,4 +1,4 @@
-import events from 'events';
+import events from 'node:events';
 
 import logger from './util/logger';
 
@@ -54,13 +54,6 @@ export default class EventBus {
     }
     public onPermitJoinChanged(key: ListenerKey, callback: (data: eventdata.PermitJoinChanged) => void): void {
         this.on('permitJoinChanged', callback, key);
-    }
-
-    public emitPublishAvailability(): void {
-        this.emitter.emit('publishAvailability');
-    }
-    public onPublishAvailability(key: ListenerKey, callback: () => void): void {
-        this.on('publishAvailability', callback, key);
     }
 
     public emitEntityRenamed(data: eventdata.EntityRenamed): void {
@@ -194,6 +187,11 @@ export default class EventBus {
     }
     public onStateChange(key: ListenerKey, callback: (data: eventdata.StateChange) => void): void {
         this.on('stateChange', callback, key);
+    }
+
+    public emitExposesAndDevicesChanged(device: Device): void {
+        this.emitDevicesChanged();
+        this.emitExposesChanged({device});
     }
 
     private on<K extends keyof EventBusMap>(event: K, callback: EventBusListener<K>, key: ListenerKey): void {
